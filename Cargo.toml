@@ -10,7 +10,7 @@ homepage = "https://github.com/akiselev/desktop-cli"
 documentation = "https://docs.rs/desktop-cli"
 readme = "README.md"
 authors = ["Alexander Kiselev <alex@akiselev.com>"]
-keywords = ["automation", "accessibility", "windows", "uiautomation", "rpc"]
+keywords = ["automation", "accessibility", "windows", "uiautomation", "rpc", "llm"]
 categories = ["command-line-utilities", "accessibility", "api-bindings", "os::windows-apis"]
 
 [dependencies]
