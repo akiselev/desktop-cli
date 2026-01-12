@@ -14,6 +14,10 @@ pub struct RpcServerConfig {
     pub port: u16,
     pub gemini_client: GeminiClient,
     pub allowed_executables: Vec<String>,
+    /// Session-wide executable filter (substring match)
+    pub exe_filter: Option<String>,
+    /// Session-wide title pattern (regex)
+    pub title_pattern: Option<String>,
 }
 
 /// Start the RPC server
@@ -30,6 +34,8 @@ pub async fn start_server(config: RpcServerConfig) -> Result<()> {
     let service_impl = Arc::new(RwLock::new(DesktopServiceImpl::new(
         config.gemini_client,
         config.allowed_executables,
+        config.exe_filter,
+        config.title_pattern,
     )));
     
     loop {

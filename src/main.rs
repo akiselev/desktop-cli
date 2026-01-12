@@ -12,8 +12,9 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use remoc::prelude::*;
 use rpc::service::DesktopService;
-use rpc::{DesktopServiceClient, ListWindowsRequest, ScreenshotRequest, ExecuteRequest, DetectRequest};
+use rpc::{DesktopServiceClient, ScreenshotRequest, ExecuteRequest, DetectRequest};
 use rpc::{DumpTreeRequest, FindElementRequest, InvokePatternRequest};
+use rpc::{ListWindowsRequest, SetDefaultWindowRequest, GetDefaultWindowRequest};
 
 /// Desktop Daemon - Control desktop applications through visual grounding
 #[derive(Parser, Debug)]
@@ -46,6 +47,14 @@ enum Commands {
         /// Run in foreground (don't daemonize)
         #[arg(long, short = 'f')]
         foreground: bool,
+
+        /// Filter windows by executable path (substring match, persists for session)
+        #[arg(long)]
+        exe_filter: Option<String>,
+
+        /// Regex pattern to filter window titles (persists for session)
+        #[arg(long)]
+        title_pattern: Option<String>,
     },
 
     /// Stop the running daemon gracefully
@@ -68,6 +77,16 @@ enum Commands {
         lines: usize,
     },
 
+    /// Window management commands
+    Window {
+        #[command(subcommand)]
+        cmd: WindowCommand,
+
+        /// Daemon port
+        #[arg(long, default_value = "9870", global = true)]
+        port: u16,
+    },
+
     /// Call a service method on the running daemon
     Call {
         #[command(subcommand)]
@@ -80,22 +99,27 @@ enum Commands {
 }
 
 #[derive(Subcommand, Debug)]
-enum CallMethod {
-    /// List visible windows
-    ListWindows {
-        /// Filter by executable path
-        #[arg(long)]
-        exe_filter: Option<String>,
+enum WindowCommand {
+    /// List visible windows (with session filters applied)
+    List,
 
-        /// Regex pattern to match window titles
-        #[arg(long)]
-        title_pattern: Option<String>,
+    /// Set the default target window for subsequent commands
+    SetDefault {
+        /// Window index (1-based from list) or HWND
+        window: String,
     },
 
+    /// Show the current default window
+    GetDefault,
+}
+
+#[derive(Subcommand, Debug)]
+enum CallMethod {
     /// Take a screenshot of a window
     Screenshot {
-        /// Window handle (HWND)
-        hwnd: String,
+        /// Window handle (HWND) - uses default if not specified
+        #[arg(long)]
+        hwnd: Option<String>,
 
         /// Screenshot method (bitblt or printwindow)
         #[arg(long)]
@@ -104,8 +128,9 @@ enum CallMethod {
 
     /// Execute natural language instructions on a window
     Execute {
-        /// Window handle (HWND)
-        hwnd: String,
+        /// Window handle (HWND) - uses default if not specified
+        #[arg(long)]
+        hwnd: Option<String>,
 
         /// Natural language instructions
         #[arg(required = true)]
@@ -118,8 +143,9 @@ enum CallMethod {
 
     /// Detect UI elements using visual grounding
     Detect {
-        /// Window handle (HWND)
-        hwnd: String,
+        /// Window handle (HWND) - uses default if not specified
+        #[arg(long)]
+        hwnd: Option<String>,
 
         /// Natural language query
         query: String,
@@ -131,8 +157,9 @@ enum CallMethod {
 
     /// Dump the UIA element tree for a window
     DumpTree {
-        /// Window handle (HWND)
-        hwnd: String,
+        /// Window handle (HWND) - uses default if not specified
+        #[arg(long)]
+        hwnd: Option<String>,
 
         /// Maximum depth
         #[arg(long, default_value = "5")]
@@ -153,8 +180,9 @@ enum CallMethod {
 
     /// Find UI elements by CSS-style selector
     FindElement {
-        /// Window handle (HWND)
-        hwnd: String,
+        /// Window handle (HWND) - uses default if not specified
+        #[arg(long)]
+        hwnd: Option<String>,
 
         /// CSS-style selector (e.g., "Button#save", "[name~='*OK*']")
         selector: String,
@@ -170,8 +198,9 @@ enum CallMethod {
 
     /// Invoke a UIA pattern operation on an element
     Invoke {
-        /// Window handle (HWND)
-        hwnd: String,
+        /// Window handle (HWND) - uses default if not specified
+        #[arg(long)]
+        hwnd: Option<String>,
 
         /// CSS-style selector to find target element
         selector: String,
@@ -197,8 +226,10 @@ async fn main() -> anyhow::Result<()> {
             gemini_model,
             gemini_api_key,
             foreground,
+            exe_filter,
+            title_pattern,
         } => {
-            cmd_start(allowed_executables, port, gemini_model, gemini_api_key, foreground).await?;
+            cmd_start(allowed_executables, port, gemini_model, gemini_api_key, foreground, exe_filter, title_pattern).await?;
         }
         Commands::Stop => {
             cmd_stop()?;
@@ -211,6 +242,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Logs { follow, lines } => {
             cmd_logs(follow, lines)?;
+        }
+        Commands::Window { cmd, port } => {
+            cmd_window(cmd, port).await?;
         }
         Commands::Call { method, port } => {
             cmd_call(method, port).await?;
@@ -226,6 +260,8 @@ async fn cmd_start(
     gemini_model: String,
     gemini_api_key: Option<String>,
     foreground: bool,
+    exe_filter: Option<String>,
+    title_pattern: Option<String>,
 ) -> anyhow::Result<()> {
     // Check if daemon is already running
     if let Some(pid) = daemon::is_daemon_running() {
@@ -256,7 +292,7 @@ async fn cmd_start(
     if foreground {
         // Run in foreground with console logging
         setup_console_logging();
-        run_server(port, gemini_model, gemini_api_key.unwrap(), allowed_executables).await?;
+        run_server(port, gemini_model, gemini_api_key.unwrap(), allowed_executables, exe_filter, title_pattern).await?;
     } else {
         // Daemonize the process
         println!("Starting Desktop daemon on port {}...", port);
@@ -273,7 +309,7 @@ async fn cmd_start(
         
         tracing::info!("Desktop daemon started (PID: {})", pid);
         
-        run_server(port, gemini_model, gemini_api_key.unwrap(), allowed_executables).await?;
+        run_server(port, gemini_model, gemini_api_key.unwrap(), allowed_executables, exe_filter, title_pattern).await?;
     }
 
     Ok(())
@@ -338,33 +374,66 @@ fn cmd_logs(follow: bool, lines: usize) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn cmd_call(method: CallMethod, port: u16) -> anyhow::Result<()> {
-    // Connect to daemon
+async fn cmd_window(cmd: WindowCommand, port: u16) -> anyhow::Result<()> {
+    let mut client = connect_to_daemon(port).await?;
+
+    match cmd {
+        WindowCommand::List => {
+            let result = client.list_windows(ListWindowsRequest::default()).await?;
+            // Print with 1-based index for user-friendly selection
+            for (i, window) in result.iter().enumerate() {
+                println!("[{}] {} - {} ({})", i + 1, window.hwnd, window.title, window.executable);
+            }
+        }
+        WindowCommand::SetDefault { window } => {
+            client.set_default_window(SetDefaultWindowRequest { window }).await?;
+            println!("Default window set");
+        }
+        WindowCommand::GetDefault => {
+            let result = client.get_default_window(GetDefaultWindowRequest::default()).await?;
+            if let Some(hwnd) = result.hwnd {
+                println!("Default window: {} ({})", hwnd, result.title.unwrap_or_default());
+            } else {
+                println!("No default window set");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn connect_to_daemon(port: u16) -> anyhow::Result<DesktopServiceClient> {
     let socket = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).await
         .map_err(|e| anyhow::anyhow!("Failed to connect to daemon on port {}: {}", port, e))?;
     
     let (socket_rx, socket_tx) = socket.into_split();
     
-    // Establish remoc connection
     let (conn, _tx, mut rx): (_, rch::base::Sender<()>, rch::base::Receiver<DesktopServiceClient>) =
         remoc::Connect::io(remoc::Cfg::default(), socket_rx, socket_tx).await?;
     
     tokio::spawn(conn);
     
-    // Receive the service client
-    let mut client = rx.recv().await?
-        .ok_or_else(|| anyhow::anyhow!("Failed to receive service client"))?;
+    rx.recv().await?
+        .ok_or_else(|| anyhow::anyhow!("Failed to receive service client"))
+}
+
+/// Resolve hwnd from optional CLI arg or get default from daemon
+async fn resolve_hwnd(client: &mut DesktopServiceClient, hwnd: Option<String>) -> anyhow::Result<String> {
+    if let Some(h) = hwnd {
+        Ok(h)
+    } else {
+        let result = client.get_default_window(GetDefaultWindowRequest::default()).await?;
+        result.hwnd.ok_or_else(|| anyhow::anyhow!("No window specified and no default window set. Use 'desktop window set-default <window>' first."))
+    }
+}
+
+async fn cmd_call(method: CallMethod, port: u16) -> anyhow::Result<()> {
+    let mut client = connect_to_daemon(port).await?;
     
     // Call the requested method
     match method {
-        CallMethod::ListWindows { exe_filter, title_pattern } => {
-            let result = client.list_windows(ListWindowsRequest {
-                executable_filter: exe_filter,
-                title_pattern,
-            }).await?;
-            println!("{}", serde_json::to_string_pretty(&result)?);
-        }
         CallMethod::Screenshot { hwnd, method } => {
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
             let result = client.take_screenshot(ScreenshotRequest {
                 hwnd,
                 method,
@@ -374,6 +443,7 @@ async fn cmd_call(method: CallMethod, port: u16) -> anyhow::Result<()> {
                 result.width, result.height, result.format, result.base64_image.len());
         }
         CallMethod::Execute { hwnd, instructions, retry_strategy } => {
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
             let result = client.execute_instructions(ExecuteRequest {
                 hwnd,
                 instructions,
@@ -382,6 +452,7 @@ async fn cmd_call(method: CallMethod, port: u16) -> anyhow::Result<()> {
             println!("{}", serde_json::to_string_pretty(&result)?);
         }
         CallMethod::Detect { hwnd, query } => {
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
             let result = client.detect_elements(DetectRequest {
                 hwnd,
                 query,
@@ -391,6 +462,7 @@ async fn cmd_call(method: CallMethod, port: u16) -> anyhow::Result<()> {
         
         // UIA Commands
         CallMethod::DumpTree { hwnd, depth, prune_offscreen, prune_empty, max_list_items } => {
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
             let result = client.dump_tree(DumpTreeRequest {
                 hwnd,
                 max_depth: Some(depth),
@@ -401,6 +473,7 @@ async fn cmd_call(method: CallMethod, port: u16) -> anyhow::Result<()> {
             println!("{}", serde_json::to_string_pretty(&result)?);
         }
         CallMethod::FindElement { hwnd, selector, all, timeout } => {
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
             let result = client.find_elements(FindElementRequest {
                 hwnd,
                 selector,
@@ -410,6 +483,7 @@ async fn cmd_call(method: CallMethod, port: u16) -> anyhow::Result<()> {
             println!("{}", serde_json::to_string_pretty(&result)?);
         }
         CallMethod::Invoke { hwnd, selector, pattern, value } => {
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
             let result = client.invoke_pattern(InvokePatternRequest {
                 hwnd,
                 selector,
@@ -451,6 +525,8 @@ async fn run_server(
     gemini_model: String,
     gemini_api_key: String,
     allowed_executables: Vec<String>,
+    exe_filter: Option<String>,
+    title_pattern: Option<String>,
 ) -> anyhow::Result<()> {
     tracing::info!(
         "Starting Desktop Daemon on port {} with Gemini model {}",
@@ -464,6 +540,13 @@ async fn run_server(
         tracing::warn!("No executable whitelist set - all windows are accessible");
     }
 
+    if let Some(ref filter) = exe_filter {
+        tracing::info!("Executable filter: {}", filter);
+    }
+    if let Some(ref pattern) = title_pattern {
+        tracing::info!("Title pattern: {}", pattern);
+    }
+
     // Initialize Gemini client
     let gemini_client = gemini::GeminiClient::new(gemini_api_key, gemini_model)?;
 
@@ -474,6 +557,8 @@ async fn run_server(
         port,
         gemini_client,
         allowed_executables,
+        exe_filter,
+        title_pattern,
     };
 
     // Start the RPC server

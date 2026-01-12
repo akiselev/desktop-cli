@@ -18,8 +18,14 @@ use uiautomation::UIAutomation;
 /// Desktop automation service trait - remotely callable via RTC
 #[rtc::remote]
 pub trait DesktopService: Sync {
-    /// List all visible windows, optionally filtered
-    async fn list_windows(&self, req: ListWindowsRequest) -> Result<Vec<WindowInfo>, ServiceError>;
+    /// List all visible windows with session filters applied
+    async fn list_windows(&mut self, req: ListWindowsRequest) -> Result<Vec<WindowInfo>, ServiceError>;
+
+    /// Set the default target window (by index or HWND)
+    async fn set_default_window(&mut self, req: SetDefaultWindowRequest) -> Result<(), ServiceError>;
+
+    /// Get the current default window
+    async fn get_default_window(&self, req: GetDefaultWindowRequest) -> Result<DefaultWindowResponse, ServiceError>;
 
     /// Take a screenshot of a window
     async fn take_screenshot(&self, req: ScreenshotRequest) -> Result<Screenshot, ServiceError>;
@@ -51,49 +57,125 @@ pub trait DesktopService: Sync {
 pub struct DesktopServiceImpl {
     pub gemini_client: GeminiClient,
     pub allowed_executables: Vec<String>,
+    /// Session-wide executable filter (substring match)
+    pub exe_filter: Option<String>,
+    /// Session-wide title pattern (regex)
+    pub title_pattern: Option<String>,
+    /// Default target window HWND
+    pub default_window: Option<String>,
+    /// Cached window list for index-based selection
+    pub cached_windows: Vec<WindowInfo>,
 }
 
 impl DesktopServiceImpl {
-    pub fn new(gemini_client: GeminiClient, allowed_executables: Vec<String>) -> Self {
+    pub fn new(
+        gemini_client: GeminiClient,
+        allowed_executables: Vec<String>,
+        exe_filter: Option<String>,
+        title_pattern: Option<String>,
+    ) -> Self {
         Self {
             gemini_client,
             allowed_executables,
+            exe_filter,
+            title_pattern,
+            default_window: None,
+            cached_windows: Vec::new(),
         }
     }
 }
 
 impl DesktopService for DesktopServiceImpl {
     #[cfg(windows)]
-    async fn list_windows(&self, req: ListWindowsRequest) -> Result<Vec<WindowInfo>, ServiceError> {
-        // If allowed_executables is configured, filter by it
-        let exe_filter = if !self.allowed_executables.is_empty() {
-            if let Some(ref exe) = req.executable_filter {
-                if !self
-                    .allowed_executables
-                    .iter()
-                    .any(|allowed| exe.contains(allowed))
-                {
-                    return Err(ServiceError::ConfigError(format!(
-                        "Executable '{}' not in allowed list",
-                        exe
-                    )));
-                }
-                Some(exe.as_str())
-            } else {
-                Some("") // This will match nothing
-            }
+    async fn list_windows(&mut self, _req: ListWindowsRequest) -> Result<Vec<WindowInfo>, ServiceError> {
+        // Use session-wide filters (set at daemon start time)
+        let windows = list_windows(
+            self.exe_filter.as_deref(),
+            self.title_pattern.as_deref(),
+        ).map_err(|e| ServiceError::AutomationError(e.to_string()))?;
+
+        // If allowed_executables is set, additionally filter by it
+        let windows = if !self.allowed_executables.is_empty() {
+            windows
+                .into_iter()
+                .filter(|w| {
+                    self.allowed_executables
+                        .iter()
+                        .any(|allowed| w.executable.contains(allowed))
+                })
+                .collect()
         } else {
-            req.executable_filter.as_deref()
+            windows
         };
 
-        list_windows(exe_filter, req.title_pattern.as_deref())
-            .map_err(|e| ServiceError::AutomationError(e.to_string()))
+        // Cache the window list for index-based selection
+        self.cached_windows = windows.clone();
+        Ok(windows)
     }
 
     #[cfg(not(windows))]
-    async fn list_windows(&self, _req: ListWindowsRequest) -> Result<Vec<WindowInfo>, ServiceError> {
+    async fn list_windows(&mut self, _req: ListWindowsRequest) -> Result<Vec<WindowInfo>, ServiceError> {
         Err(ServiceError::PlatformNotSupported)
     }
+
+    #[cfg(windows)]
+    async fn set_default_window(&mut self, req: SetDefaultWindowRequest) -> Result<(), ServiceError> {
+        // Try to parse as a 1-based index first
+        if let Ok(index) = req.window.parse::<usize>() {
+            if index == 0 || index > self.cached_windows.len() {
+                return Err(ServiceError::WindowNotFound(format!(
+                    "Window index {} out of range (1-{}). Run 'desktop window list' first.",
+                    index,
+                    self.cached_windows.len()
+                )));
+            }
+            let window = &self.cached_windows[index - 1];
+            self.default_window = Some(window.hwnd.clone());
+            return Ok(());
+        }
+
+        // Otherwise treat as HWND string - validate it exists
+        let hwnd = parse_hwnd(&req.window)
+            .map_err(|e| ServiceError::AutomationError(e.to_string()))?;
+        
+        // Verify the window exists
+        let _ = crate::automation::windows::get_window_info(hwnd)
+            .map_err(|_| ServiceError::WindowNotFound(format!("Window with HWND {} not found", req.window)))?;
+
+        self.default_window = Some(req.window);
+        Ok(())
+    }
+
+    #[cfg(not(windows))]
+    async fn set_default_window(&mut self, _req: SetDefaultWindowRequest) -> Result<(), ServiceError> {
+        Err(ServiceError::PlatformNotSupported)
+    }
+
+    async fn get_default_window(&self, _req: GetDefaultWindowRequest) -> Result<DefaultWindowResponse, ServiceError> {
+        let title = if let Some(ref hwnd_str) = self.default_window {
+            #[cfg(windows)]
+            {
+                if let Ok(hwnd) = parse_hwnd(hwnd_str) {
+                    crate::automation::windows::get_window_info(hwnd)
+                        .map(|info| info.title)
+                        .ok()
+                } else {
+                    None
+                }
+            }
+            #[cfg(not(windows))]
+            { None }
+        } else {
+            None
+        };
+
+        Ok(DefaultWindowResponse {
+            hwnd: self.default_window.clone(),
+            title,
+        })
+    }
+
+
 
     #[cfg(windows)]
     async fn take_screenshot(&self, req: ScreenshotRequest) -> Result<Screenshot, ServiceError> {

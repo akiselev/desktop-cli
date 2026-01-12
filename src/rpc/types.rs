@@ -47,11 +47,26 @@ impl std::fmt::Display for ServiceError {
 
 impl std::error::Error for ServiceError {}
 
-/// Request to list windows
+/// Request to list windows (filters applied at daemon start time)
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ListWindowsRequest {}
+
+/// Request to set the default target window
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListWindowsRequest {
-    pub executable_filter: Option<String>,
-    pub title_pattern: Option<String>,
+pub struct SetDefaultWindowRequest {
+    /// Window index from list (1-based) or HWND string
+    pub window: String,
+}
+
+/// Request to get the current default window
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct GetDefaultWindowRequest {}
+
+/// Response containing the default window info
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DefaultWindowResponse {
+    pub hwnd: Option<String>,
+    pub title: Option<String>,
 }
 
 /// Request to take a screenshot
