@@ -1,8 +1,8 @@
 use thiserror::Error;
 
-/// Main error type for the desktop MCP server
+/// Main error type for the desktop cli server
 #[derive(Error, Debug)]
-pub enum DesktopMcpError {
+pub enum DesktopCliError {
     #[error("Window not found: {0}")]
     WindowNotFound(String),
 
@@ -20,9 +20,6 @@ pub enum DesktopMcpError {
 
     #[error("Execution failed at step {step}: {reason}")]
     ExecutionError { step: usize, reason: String },
-
-    #[error("MCP protocol error: {0}")]
-    McpError(String),
 
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
@@ -56,8 +53,8 @@ pub enum GeminiError {
     ApiError { status: u16, message: String },
 }
 
-/// Result type alias for desktop MCP operations
-pub type Result<T> = std::result::Result<T, DesktopMcpError>;
+/// Result type alias for desktop CLI operations
+pub type Result<T> = std::result::Result<T, DesktopCliError>;
 
 /// Result type alias for Gemini operations
 pub type GeminiResult<T> = std::result::Result<T, GeminiError>;

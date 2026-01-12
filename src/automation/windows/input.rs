@@ -1,5 +1,5 @@
 use crate::automation::windows::coordinates::{normalize_screen_coords, window_to_screen_coords};
-use crate::error::{DesktopMcpError, Result};
+use crate::error::{DesktopCliError, Result};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_KEYUP,
@@ -63,7 +63,7 @@ pub fn click_at_coords(hwnd: HWND, window_x: i32, window_y: i32) -> Result<()> {
     unsafe {
         let sent = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
         if sent != inputs.len() as u32 {
-            return Err(DesktopMcpError::AutomationError(format!(
+            return Err(DesktopCliError::AutomationError(format!(
                 "SendInput failed: sent {} out of {} events",
                 sent,
                 inputs.len()
@@ -115,7 +115,7 @@ pub fn type_text(text: &str) -> Result<()> {
         unsafe {
             let sent = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
             if sent != inputs.len() as u32 {
-                return Err(DesktopMcpError::AutomationError(format!(
+                return Err(DesktopCliError::AutomationError(format!(
                     "SendInput failed: sent {} out of {} events",
                     sent,
                     inputs.len()
@@ -163,7 +163,7 @@ pub fn press_key(vk_code: u16) -> Result<()> {
     unsafe {
         let sent = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
         if sent != inputs.len() as u32 {
-            return Err(DesktopMcpError::AutomationError(format!(
+            return Err(DesktopCliError::AutomationError(format!(
                 "SendInput failed: sent {} out of {} events",
                 sent,
                 inputs.len()

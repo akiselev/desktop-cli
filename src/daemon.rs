@@ -9,18 +9,18 @@ use std::path::PathBuf;
 
 use directories::ProjectDirs;
 
-/// Get the project directories for desktop-mcp
+/// Get the project directories for desktop-cli
 fn get_project_dirs() -> Option<ProjectDirs> {
-    ProjectDirs::from("com", "desktop-mcp", "desktop-mcp")
+    ProjectDirs::from("com", "desktop-cli", "desktop-cli")
 }
 
 /// Get the runtime directory for PID files
 pub fn get_runtime_dir() -> PathBuf {
     // Try XDG_RUNTIME_DIR first, fall back to /tmp
     if let Some(runtime_dir) = std::env::var_os("XDG_RUNTIME_DIR") {
-        PathBuf::from(runtime_dir).join("desktop-mcp")
+        PathBuf::from(runtime_dir).join("desktop-cli")
     } else {
-        PathBuf::from("/tmp/desktop-mcp")
+        PathBuf::from("/tmp/desktop-cli")
     }
 }
 
@@ -31,18 +31,18 @@ pub fn get_data_dir() -> PathBuf {
         .unwrap_or_else(|| {
             dirs::home_dir()
                 .unwrap_or_else(|| PathBuf::from("/tmp"))
-                .join(".local/share/desktop-mcp")
+                .join(".local/share/desktop-cli")
         })
 }
 
 /// Get the PID file path
 pub fn get_pid_file() -> PathBuf {
-    get_runtime_dir().join("desktop-mcp.pid")
+    get_runtime_dir().join("desktop-cli.pid")
 }
 
 /// Get the log file path
 pub fn get_log_file() -> PathBuf {
-    get_data_dir().join("desktop-mcp.log")
+    get_data_dir().join("desktop-cli.log")
 }
 
 /// Read the PID from the PID file

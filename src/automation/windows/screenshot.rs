@@ -1,4 +1,4 @@
-use crate::error::{DesktopMcpError, Result};
+use crate::error::{DesktopCliError, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use windows::Win32::Foundation::HWND;
 
@@ -59,7 +59,7 @@ pub fn capture_screenshot(hwnd: HWND, method: ScreenshotMethod) -> Result<Screen
 /// Try to capture screenshot using BitBlt method
 fn try_capture_bitblt(hwnd: HWND) -> Result<Screenshot> {
     let screenshot = win_screenshot::capture::capture_window(hwnd.0 as isize)
-        .map_err(|e| DesktopMcpError::ScreenshotError(format!("BitBlt capture failed: {}", e)))?;
+        .map_err(|e| DesktopCliError::ScreenshotError(format!("BitBlt capture failed: {}", e)))?;
 
     encode_screenshot(screenshot)
 }
@@ -70,7 +70,7 @@ fn try_capture_printwindow(hwnd: HWND) -> Result<Screenshot> {
     // which internally falls back to PrintWindow on failure
     // For now, we'll implement a simple version
     let screenshot = win_screenshot::capture::capture_window(hwnd.0 as isize)
-        .map_err(|e| DesktopMcpError::ScreenshotError(format!("PrintWindow capture failed: {}", e)))?;
+        .map_err(|e| DesktopCliError::ScreenshotError(format!("PrintWindow capture failed: {}", e)))?;
 
     encode_screenshot(screenshot)
 }
@@ -92,7 +92,7 @@ fn encode_screenshot(screenshot: win_screenshot::capture::ScreenShot) -> Result<
 
         let mut writer = encoder
             .write_header()
-            .map_err(|e| DesktopMcpError::ScreenshotError(format!("PNG encoding failed: {}", e)))?;
+            .map_err(|e| DesktopCliError::ScreenshotError(format!("PNG encoding failed: {}", e)))?;
 
         // Convert Vec<Color> to RGBA bytes
         let rgba_bytes: Vec<u8> = pixels
@@ -102,7 +102,7 @@ fn encode_screenshot(screenshot: win_screenshot::capture::ScreenShot) -> Result<
 
         writer
             .write_image_data(&rgba_bytes)
-            .map_err(|e| DesktopMcpError::ScreenshotError(format!("PNG writing failed: {}", e)))?;
+            .map_err(|e| DesktopCliError::ScreenshotError(format!("PNG writing failed: {}", e)))?;
     }
 
     // Encode to base64

@@ -1,5 +1,5 @@
 use crate::automation::types::{WindowInfo, WindowRect};
-use crate::error::{DesktopMcpError, Result};
+use crate::error::{DesktopCliError, Result};
 use regex::Regex;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
 use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
@@ -16,14 +16,14 @@ pub fn list_windows(
     let title_regex = title_pattern
         .map(|p| Regex::new(p))
         .transpose()
-        .map_err(|e| DesktopMcpError::ConfigError(format!("Invalid regex pattern: {}", e)))?;
+        .map_err(|e| DesktopCliError::ConfigError(format!("Invalid regex pattern: {}", e)))?;
 
     unsafe {
         EnumWindows(
             Some(enum_windows_callback),
             LPARAM(&mut windows as *mut _ as isize),
         )
-        .map_err(|e| DesktopMcpError::AutomationError(format!("EnumWindows failed: {}", e)))?;
+        .map_err(|e| DesktopCliError::AutomationError(format!("EnumWindows failed: {}", e)))?;
     }
 
     // Apply filters
@@ -126,7 +126,7 @@ pub fn parse_hwnd(hwnd_str: &str) -> Result<HWND> {
     hwnd_str
         .parse::<isize>()
         .map(|h| HWND(h as _))
-        .map_err(|e| DesktopMcpError::AutomationError(format!("Invalid HWND: {}", e)))
+        .map_err(|e| DesktopCliError::AutomationError(format!("Invalid HWND: {}", e)))
 }
 
 #[cfg(test)]

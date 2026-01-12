@@ -1,20 +1,20 @@
 /// Instruction parser for validating and preprocessing natural language instructions
 /// Since we're using Gemini for interpretation, this mainly does validation and cleanup
 
-use crate::error::{DesktopMcpError, Result};
+use crate::error::{DesktopCliError, Result};
 
 /// Parse and validate an instruction
 pub fn parse_instruction(instruction: &str) -> Result<String> {
     let trimmed = instruction.trim();
 
     if trimmed.is_empty() {
-        return Err(DesktopMcpError::ConfigError(
+        return Err(DesktopCliError::ConfigError(
             "Instruction cannot be empty".to_string(),
         ));
     }
 
     if trimmed.len() > 500 {
-        return Err(DesktopMcpError::ConfigError(
+        return Err(DesktopCliError::ConfigError(
             "Instruction too long (max 500 characters)".to_string(),
         ));
     }
@@ -25,13 +25,13 @@ pub fn parse_instruction(instruction: &str) -> Result<String> {
 /// Validate a list of instructions
 pub fn validate_instructions(instructions: &[String]) -> Result<Vec<String>> {
     if instructions.is_empty() {
-        return Err(DesktopMcpError::ConfigError(
+        return Err(DesktopCliError::ConfigError(
             "Instruction list cannot be empty".to_string(),
         ));
     }
 
     if instructions.len() > 50 {
-        return Err(DesktopMcpError::ConfigError(
+        return Err(DesktopCliError::ConfigError(
             "Too many instructions (max 50)".to_string(),
         ));
     }
@@ -41,7 +41,7 @@ pub fn validate_instructions(instructions: &[String]) -> Result<Vec<String>> {
         .enumerate()
         .map(|(i, inst)| {
             parse_instruction(inst).map_err(|e| {
-                DesktopMcpError::ConfigError(format!("Instruction {}: {}", i + 1, e))
+                DesktopCliError::ConfigError(format!("Instruction {}: {}", i + 1, e))
             })
         })
         .collect();

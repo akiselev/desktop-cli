@@ -1,6 +1,6 @@
 #[cfg(windows)]
 use crate::automation::windows::{capture_screenshot, click_at_coords, parse_hwnd, type_text, ScreenshotMethod};
-use crate::error::{DesktopMcpError, Result};
+use crate::error::{DesktopCliError, Result};
 use crate::executor::parser::{is_dangerous_instruction, validate_instructions};
 use crate::executor::state::{ExecutionState, ExecutionSummary};
 use crate::gemini::client::GeminiClient;
@@ -101,7 +101,7 @@ impl Executor {
         // Step 1: Capture screenshot
         tracing::debug!("Capturing screenshot of window");
         let screenshot = capture_screenshot(hwnd, ScreenshotMethod::default())
-            .map_err(|e| DesktopMcpError::ExecutionError {
+            .map_err(|e| DesktopCliError::ExecutionError {
                 step: 0,
                 reason: format!("Screenshot failed: {}", e),
             })?;
@@ -115,13 +115,13 @@ impl Executor {
             retry_strategy,
         )
         .await
-        .map_err(|e| DesktopMcpError::ExecutionError {
+        .map_err(|e| DesktopCliError::ExecutionError {
             step: 1,
             reason: format!("Element detection failed: {}", e),
         })?;
 
         if !detection_result.element_found {
-            return Err(DesktopMcpError::ExecutionError {
+            return Err(DesktopCliError::ExecutionError {
                 step: 1,
                 reason: format!("Element not found: {}", instruction),
             });
@@ -135,7 +135,7 @@ impl Executor {
 
         // Step 3: Convert bounding box to pixel coordinates
         if detection_result.bounding_box.len() != 4 {
-            return Err(DesktopMcpError::ExecutionError {
+            return Err(DesktopCliError::ExecutionError {
                 step: 2,
                 reason: "Invalid bounding box format".to_string(),
             });
@@ -149,7 +149,7 @@ impl Executor {
         ]);
 
         let pixel_bbox = convert_to_pixels(&normalized_bbox, screenshot.width, screenshot.height)
-            .map_err(|e| DesktopMcpError::ExecutionError {
+            .map_err(|e| DesktopCliError::ExecutionError {
                 step: 2,
                 reason: format!("Coordinate conversion failed: {}", e),
             })?;
@@ -162,7 +162,7 @@ impl Executor {
             "click" => {
                 tracing::debug!("Executing click at ({}, {})", center_x, center_y);
                 click_at_coords(hwnd, center_x, center_y).map_err(|e| {
-                    DesktopMcpError::ExecutionError {
+                    DesktopCliError::ExecutionError {
                         step: 3,
                         reason: format!("Click failed: {}", e),
                     }
@@ -173,7 +173,7 @@ impl Executor {
                 // First click to focus, then type
                 tracing::debug!("Clicking to focus at ({}, {})", center_x, center_y);
                 click_at_coords(hwnd, center_x, center_y).map_err(|e| {
-                    DesktopMcpError::ExecutionError {
+                    DesktopCliError::ExecutionError {
                         step: 3,
                         reason: format!("Click to focus failed: {}", e),
                     }
@@ -191,7 +191,7 @@ impl Executor {
                 };
 
                 tracing::debug!("Typing text: {}", text_to_type);
-                type_text(&text_to_type).map_err(|e| DesktopMcpError::ExecutionError {
+                type_text(&text_to_type).map_err(|e| DesktopCliError::ExecutionError {
                     step: 3,
                     reason: format!("Typing failed: {}", e),
                 })?;
@@ -200,14 +200,14 @@ impl Executor {
             "scroll" | "drag" | "hover" => {
                 // These actions are not yet implemented
                 tracing::warn!("Action type '{}' not yet implemented", detection_result.action_type);
-                return Err(DesktopMcpError::ExecutionError {
+                return Err(DesktopCliError::ExecutionError {
                     step: 3,
                     reason: format!("Action type '{}' not implemented", detection_result.action_type),
                 });
             }
 
             _ => {
-                return Err(DesktopMcpError::ExecutionError {
+                return Err(DesktopCliError::ExecutionError {
                     step: 3,
                     reason: format!("Unknown action type: {}", detection_result.action_type),
                 });

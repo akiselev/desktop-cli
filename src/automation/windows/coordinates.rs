@@ -1,4 +1,4 @@
-use crate::error::{DesktopMcpError, Result};
+use crate::error::{DesktopCliError, Result};
 use windows::Win32::Foundation::{HWND, POINT};
 use windows::Win32::UI::WindowsAndMessaging::{ClientToScreen, GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
 
@@ -11,7 +11,7 @@ pub fn window_to_screen_coords(hwnd: HWND, window_x: i32, window_y: i32) -> Resu
 
     unsafe {
         ClientToScreen(hwnd, &mut point)
-            .map_err(|e| DesktopMcpError::CoordinateError(format!("ClientToScreen failed: {}", e)))?;
+            .map_err(|e| DesktopCliError::CoordinateError(format!("ClientToScreen failed: {}", e)))?;
     }
 
     Ok((point.x, point.y))
@@ -24,7 +24,7 @@ pub fn normalize_screen_coords(screen_x: i32, screen_y: i32) -> Result<(i32, i32
     let screen_height = unsafe { GetSystemMetrics(SM_CYSCREEN) };
 
     if screen_width == 0 || screen_height == 0 {
-        return Err(DesktopMcpError::CoordinateError(
+        return Err(DesktopCliError::CoordinateError(
             "Failed to get screen metrics".to_string(),
         ));
     }

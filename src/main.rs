@@ -3,12 +3,18 @@ mod daemon;
 mod error;
 mod executor;
 mod gemini;
-mod mcp;
+mod rpc;
 
 use clap::{Parser, Subcommand};
+use std::net::Ipv4Addr;
+use tokio::net::TcpStream;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-/// Desktop MCP Server - Control desktop applications through visual grounding
+use remoc::prelude::*;
+use rpc::service::DesktopService;
+use rpc::{DesktopServiceClient, ListWindowsRequest, ScreenshotRequest, ExecuteRequest, DetectRequest};
+
+/// Desktop Daemon - Control desktop applications through visual grounding
 #[derive(Parser, Debug)]
 #[command(name = "desktop", author, version, about, long_about = None)]
 struct Cli {
@@ -18,14 +24,14 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Start the MCP server as a background daemon
+    /// Start the daemon as a background process
     Start {
         /// Comma-separated list of allowed executables (e.g., "notepad.exe,chrome.exe")
         #[arg(long)]
         allowed_executables: Option<String>,
 
         /// Server port
-        #[arg(long, default_value = "3000")]
+        #[arg(long, default_value = "9870")]
         port: u16,
 
         /// Gemini model to use
@@ -60,6 +66,63 @@ enum Commands {
         #[arg(short = 'n', long, default_value = "50")]
         lines: usize,
     },
+
+    /// Call a service method on the running daemon
+    Call {
+        #[command(subcommand)]
+        method: CallMethod,
+
+        /// Daemon port
+        #[arg(long, default_value = "9870", global = true)]
+        port: u16,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum CallMethod {
+    /// List visible windows
+    ListWindows {
+        /// Filter by executable path
+        #[arg(long)]
+        exe_filter: Option<String>,
+
+        /// Regex pattern to match window titles
+        #[arg(long)]
+        title_pattern: Option<String>,
+    },
+
+    /// Take a screenshot of a window
+    Screenshot {
+        /// Window handle (HWND)
+        hwnd: String,
+
+        /// Screenshot method (bitblt or printwindow)
+        #[arg(long)]
+        method: Option<String>,
+    },
+
+    /// Execute natural language instructions on a window
+    Execute {
+        /// Window handle (HWND)
+        hwnd: String,
+
+        /// Natural language instructions
+        #[arg(required = true)]
+        instructions: Vec<String>,
+
+        /// Retry strategy (none, basic, advanced)
+        #[arg(long)]
+        retry_strategy: Option<String>,
+    },
+
+    /// Detect UI elements using visual grounding
+    Detect {
+        /// Window handle (HWND)
+        hwnd: String,
+
+        /// Natural language query
+        query: String,
+    },
 }
 
 #[tokio::main]
@@ -87,6 +150,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Logs { follow, lines } => {
             cmd_logs(follow, lines)?;
+        }
+        Commands::Call { method, port } => {
+            cmd_call(method, port).await?;
         }
     }
 
@@ -132,7 +198,7 @@ async fn cmd_start(
         run_server(port, gemini_model, gemini_api_key.unwrap(), allowed_executables).await?;
     } else {
         // Daemonize the process
-        println!("Starting Desktop MCP daemon on port {}...", port);
+        println!("Starting Desktop daemon on port {}...", port);
         
         daemon::daemonize(port).map_err(|e| anyhow::anyhow!("{}", e))?;
         
@@ -144,7 +210,7 @@ async fn cmd_start(
         let pid = std::process::id();
         daemon::write_pid(pid)?;
         
-        tracing::info!("Desktop MCP daemon started (PID: {})", pid);
+        tracing::info!("Desktop daemon started (PID: {})", pid);
         
         run_server(port, gemini_model, gemini_api_key.unwrap(), allowed_executables).await?;
     }
@@ -182,9 +248,9 @@ fn cmd_status() {
     let status = daemon::DaemonStatus::check();
     
     if status.running {
-        println!("Desktop MCP daemon is running (PID: {})", status.pid.unwrap());
+        println!("Desktop daemon is running (PID: {})", status.pid.unwrap());
     } else {
-        println!("Desktop MCP daemon is not running");
+        println!("Desktop daemon is not running");
     }
     
     println!();
@@ -211,11 +277,66 @@ fn cmd_logs(follow: bool, lines: usize) -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn cmd_call(method: CallMethod, port: u16) -> anyhow::Result<()> {
+    // Connect to daemon
+    let socket = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).await
+        .map_err(|e| anyhow::anyhow!("Failed to connect to daemon on port {}: {}", port, e))?;
+    
+    let (socket_rx, socket_tx) = socket.into_split();
+    
+    // Establish remoc connection
+    let (conn, _tx, mut rx): (_, rch::base::Sender<()>, rch::base::Receiver<DesktopServiceClient>) =
+        remoc::Connect::io(remoc::Cfg::default(), socket_rx, socket_tx).await?;
+    
+    tokio::spawn(conn);
+    
+    // Receive the service client
+    let mut client = rx.recv().await?
+        .ok_or_else(|| anyhow::anyhow!("Failed to receive service client"))?;
+    
+    // Call the requested method
+    match method {
+        CallMethod::ListWindows { exe_filter, title_pattern } => {
+            let result = client.list_windows(ListWindowsRequest {
+                executable_filter: exe_filter,
+                title_pattern,
+            }).await?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+        CallMethod::Screenshot { hwnd, method } => {
+            let result = client.take_screenshot(ScreenshotRequest {
+                hwnd,
+                method,
+            }).await?;
+            // Print metadata, not the full base64
+            println!("{{\"width\": {}, \"height\": {}, \"format\": \"{}\", \"base64_length\": {}}}", 
+                result.width, result.height, result.format, result.base64_image.len());
+        }
+        CallMethod::Execute { hwnd, instructions, retry_strategy } => {
+            let result = client.execute_instructions(ExecuteRequest {
+                hwnd,
+                instructions,
+                retry_strategy,
+            }).await?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+        CallMethod::Detect { hwnd, query } => {
+            let result = client.detect_elements(DetectRequest {
+                hwnd,
+                query,
+            }).await?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+    }
+    
+    Ok(())
+}
+
 fn setup_console_logging() {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "desktop_mcp=info,tower_http=debug".into()),
+                .unwrap_or_else(|_| "desktop_cli=info".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
@@ -228,7 +349,7 @@ fn setup_file_logging() {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "desktop_mcp=info,tower_http=info".into()),
+                .unwrap_or_else(|_| "desktop_cli=info".into()),
         )
         .with(tracing_subscriber::fmt::layer().with_ansi(false))
         .init();
@@ -241,7 +362,7 @@ async fn run_server(
     allowed_executables: Vec<String>,
 ) -> anyhow::Result<()> {
     tracing::info!(
-        "Starting Desktop MCP Server on port {} with Gemini model {}",
+        "Starting Desktop Daemon on port {} with Gemini model {}",
         port,
         gemini_model
     );
@@ -257,16 +378,15 @@ async fn run_server(
 
     tracing::info!("Gemini client initialized with model: {}", gemini_client.model());
 
-    // Create MCP server configuration
-    let server_config = mcp::server::McpServerConfig {
+    // Create RPC server configuration
+    let server_config = rpc::server::RpcServerConfig {
         port,
         gemini_client,
         allowed_executables,
     };
 
-    // Start the MCP server
-    tracing::info!("Starting MCP server...");
-    mcp::server::start_server(server_config).await?;
+    // Start the RPC server
+    rpc::start_server(server_config).await?;
 
     Ok(())
 }

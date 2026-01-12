@@ -1,1 +1,1 @@
-# desktop-mcp
+# desktop-cli

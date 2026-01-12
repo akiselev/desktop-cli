@@ -106,7 +106,7 @@ pub enum StepStatus {
     Skipped,
 }
 
-/// Summary of execution to return to MCP client
+/// Summary of execution to return to CLI client
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionSummary {
     pub success: bool,
