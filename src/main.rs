@@ -13,6 +13,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use remoc::prelude::*;
 use rpc::service::DesktopService;
 use rpc::{DesktopServiceClient, ListWindowsRequest, ScreenshotRequest, ExecuteRequest, DetectRequest};
+use rpc::{DumpTreeRequest, FindElementRequest, InvokePatternRequest};
 
 /// Desktop Daemon - Control desktop applications through visual grounding
 #[derive(Parser, Debug)]
@@ -122,6 +123,66 @@ enum CallMethod {
 
         /// Natural language query
         query: String,
+    },
+
+    // =========================================================================
+    // UIA (UI Automation) Commands
+    // =========================================================================
+
+    /// Dump the UIA element tree for a window
+    DumpTree {
+        /// Window handle (HWND)
+        hwnd: String,
+
+        /// Maximum depth
+        #[arg(long, default_value = "5")]
+        depth: u32,
+
+        /// Prune offscreen elements
+        #[arg(long)]
+        prune_offscreen: bool,
+
+        /// Prune empty elements (no name and no patterns)
+        #[arg(long)]
+        prune_empty: bool,
+
+        /// Max list items per container (0 = unlimited)
+        #[arg(long, default_value = "20")]
+        max_list_items: u32,
+    },
+
+    /// Find UI elements by CSS-style selector
+    FindElement {
+        /// Window handle (HWND)
+        hwnd: String,
+
+        /// CSS-style selector (e.g., "Button#save", "[name~='*OK*']")
+        selector: String,
+
+        /// Find all matches (default: first only)
+        #[arg(long)]
+        all: bool,
+
+        /// Timeout in milliseconds
+        #[arg(long, default_value = "3000")]
+        timeout: u64,
+    },
+
+    /// Invoke a UIA pattern operation on an element
+    Invoke {
+        /// Window handle (HWND)
+        hwnd: String,
+
+        /// CSS-style selector to find target element
+        selector: String,
+
+        /// Pattern operation (invoke, get-value, set-value, toggle, select, expand, collapse)
+        #[arg(long)]
+        pattern: String,
+
+        /// Value for set operations
+        #[arg(long)]
+        value: Option<String>,
     },
 }
 
@@ -324,6 +385,36 @@ async fn cmd_call(method: CallMethod, port: u16) -> anyhow::Result<()> {
             let result = client.detect_elements(DetectRequest {
                 hwnd,
                 query,
+            }).await?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+        
+        // UIA Commands
+        CallMethod::DumpTree { hwnd, depth, prune_offscreen, prune_empty, max_list_items } => {
+            let result = client.dump_tree(DumpTreeRequest {
+                hwnd,
+                max_depth: Some(depth),
+                prune_offscreen: Some(prune_offscreen),
+                prune_empty: Some(prune_empty),
+                max_list_items: Some(max_list_items),
+            }).await?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+        CallMethod::FindElement { hwnd, selector, all, timeout } => {
+            let result = client.find_elements(FindElementRequest {
+                hwnd,
+                selector,
+                find_all: Some(all),
+                timeout_ms: Some(timeout),
+            }).await?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+        CallMethod::Invoke { hwnd, selector, pattern, value } => {
+            let result = client.invoke_pattern(InvokePatternRequest {
+                hwnd,
+                selector,
+                pattern,
+                value,
             }).await?;
             println!("{}", serde_json::to_string_pretty(&result)?);
         }

@@ -3,6 +3,16 @@ name = "desktop-cli"
 version = "0.1.0"
 edition = "2021"
 
+description = "Desktop automation daemon with UI Automation (UIA) support for Windows. Query UI element trees, find elements with CSS-style selectors, and interact via accessibility patterns."
+license = "GPL-3.0-only"
+repository = "https://github.com/akiselev/desktop-cli"
+homepage = "https://github.com/akiselev/desktop-cli"
+documentation = "https://docs.rs/desktop-cli"
+readme = "README.md"
+authors = ["Alexander Kiselev <alex@akiselev.com>"]
+keywords = ["automation", "accessibility", "windows", "uiautomation", "rpc"]
+categories = ["command-line-utilities", "accessibility", "api-bindings", "os::windows-apis"]
+
 [dependencies]
 # RPC
 remoc = { version = "0.18", features = ["rtc"] }
@@ -31,6 +41,7 @@ regex = "1"
 png = "0.17"
 directories = "5"
 dirs = "5"
+wildmatch = "2.6"
 
 # Daemon (Unix only)
 [target.'cfg(unix)'.dependencies]
@@ -47,3 +58,4 @@ windows = { version = "0.58", features = [
     "Win32_UI_Input_KeyboardAndMouse",
 ] }
 win-screenshot = "4"
+uiautomation = "0.24"
