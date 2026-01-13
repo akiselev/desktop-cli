@@ -2,7 +2,12 @@
 
 use crate::rpc::types::{TreeDumpOptions, UiaElement};
 use super::selector::{Selector, SelectorSegment};
-use uiautomation::types::TreeScope;
+use uiautomation::patterns::{
+    UIExpandCollapsePattern, UIGridPattern, UIInvokePattern, UIRangeValuePattern,
+    UIScrollPattern, UISelectionItemPattern, UISelectionPattern, UITablePattern,
+    UITextPattern, UITogglePattern, UITransformPattern, UIValuePattern, UIWindowPattern,
+};
+use uiautomation::types::{Handle, TreeScope};
 use uiautomation::{UIAutomation, UIElement, UITreeWalker};
 
 /// Convert a UIElement to our serializable UiaElement
@@ -29,7 +34,7 @@ pub fn element_to_uia(elem: &UIElement, depth: u32) -> UiaElement {
 
     // Try to get value from ValuePattern
     let value = elem
-        .get_value_pattern()
+        .get_pattern::<UIValuePattern>()
         .ok()
         .and_then(|p| p.get_value().ok());
 
@@ -66,43 +71,43 @@ pub fn element_to_uia(elem: &UIElement, depth: u32) -> UiaElement {
 fn detect_patterns(elem: &UIElement) -> Vec<String> {
     let mut patterns = Vec::new();
 
-    if elem.get_invoke_pattern().is_ok() {
+    if elem.get_pattern::<UIInvokePattern>().is_ok() {
         patterns.push("Invoke".to_string());
     }
-    if elem.get_value_pattern().is_ok() {
+    if elem.get_pattern::<UIValuePattern>().is_ok() {
         patterns.push("Value".to_string());
     }
-    if elem.get_toggle_pattern().is_ok() {
+    if elem.get_pattern::<UITogglePattern>().is_ok() {
         patterns.push("Toggle".to_string());
     }
-    if elem.get_selection_item_pattern().is_ok() {
+    if elem.get_pattern::<UISelectionItemPattern>().is_ok() {
         patterns.push("SelectionItem".to_string());
     }
-    if elem.get_selection_pattern().is_ok() {
+    if elem.get_pattern::<UISelectionPattern>().is_ok() {
         patterns.push("Selection".to_string());
     }
-    if elem.get_expand_collapse_pattern().is_ok() {
+    if elem.get_pattern::<UIExpandCollapsePattern>().is_ok() {
         patterns.push("ExpandCollapse".to_string());
     }
-    if elem.get_scroll_pattern().is_ok() {
+    if elem.get_pattern::<UIScrollPattern>().is_ok() {
         patterns.push("Scroll".to_string());
     }
-    if elem.get_text_pattern().is_ok() {
+    if elem.get_pattern::<UITextPattern>().is_ok() {
         patterns.push("Text".to_string());
     }
-    if elem.get_range_value_pattern().is_ok() {
+    if elem.get_pattern::<UIRangeValuePattern>().is_ok() {
         patterns.push("RangeValue".to_string());
     }
-    if elem.get_grid_pattern().is_ok() {
+    if elem.get_pattern::<UIGridPattern>().is_ok() {
         patterns.push("Grid".to_string());
     }
-    if elem.get_table_pattern().is_ok() {
+    if elem.get_pattern::<UITablePattern>().is_ok() {
         patterns.push("Table".to_string());
     }
-    if elem.get_window_pattern().is_ok() {
+    if elem.get_pattern::<UIWindowPattern>().is_ok() {
         patterns.push("Window".to_string());
     }
-    if elem.get_transform_pattern().is_ok() {
+    if elem.get_pattern::<UITransformPattern>().is_ok() {
         patterns.push("Transform".to_string());
     }
 
@@ -186,7 +191,7 @@ pub fn element_from_hwnd(
     automation: &UIAutomation,
     hwnd: isize,
 ) -> Result<UIElement, uiautomation::Error> {
-    automation.element_from_handle(windows::Win32::Foundation::HWND(hwnd as *mut _))
+    automation.element_from_handle(Handle::from(hwnd))
 }
 
 /// Find elements matching a selector
@@ -266,10 +271,8 @@ fn find_by_segment(
         }
     }
 
-    // Set automation ID if specified
-    if let Some(ref id) = seg.automation_id {
-        matcher = matcher.automation_id(id);
-    }
+    // Note: UIMatcher in uiautomation 0.24 doesn't support automation_id filtering
+    // We'll filter by automation_id manually after getting results
 
     // For class name, we need to filter manually since UIMatcher uses classname differently
     // Get all matching elements and then filter
@@ -293,6 +296,14 @@ fn find_by_segment(
 
 /// Check if an element matches a selector segment's additional criteria
 fn matches_segment(elem: &UIElement, seg: &SelectorSegment) -> bool {
+    // Check automation ID
+    if let Some(ref expected_id) = seg.automation_id {
+        let actual = elem.get_automation_id().unwrap_or_default();
+        if actual != *expected_id {
+            return false;
+        }
+    }
+
     // Check class name
     if let Some(ref expected_class) = seg.class_name {
         let actual = elem.get_classname().unwrap_or_default();
@@ -319,7 +330,7 @@ fn get_element_attribute(elem: &UIElement, attr_name: &str) -> String {
         "automationid" | "automation_id" | "id" => elem.get_automation_id().unwrap_or_default(),
         "classname" | "class" => elem.get_classname().unwrap_or_default(),
         "value" => elem
-            .get_value_pattern()
+            .get_pattern::<UIValuePattern>()
             .ok()
             .and_then(|p| p.get_value().ok())
             .unwrap_or_default(),

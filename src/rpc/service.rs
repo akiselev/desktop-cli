@@ -225,12 +225,33 @@ impl DesktopService for DesktopServiceImpl {
                 _ => ServiceError::AutomationError(e.to_string()),
             })?;
 
+        // Find last error from failed steps
+        let last_error = summary
+            .results
+            .iter()
+            .rev()
+            .find_map(|r| r.error.clone());
+
+        // Extract coordinates from successful click results
+        let coordinates: Vec<(i32, i32)> = summary
+            .results
+            .iter()
+            .filter_map(|r| {
+                use crate::executor::state::StepStatus;
+                if matches!(r.status, StepStatus::Success) {
+                    r.coordinates
+                } else {
+                    None
+                }
+            })
+            .collect();
+
         Ok(ExecutionSummary {
-            total_steps: summary.total_steps,
-            completed_steps: summary.completed_steps,
+            total_steps: summary.executed_steps + summary.failed_steps,
+            completed_steps: summary.executed_steps,
             success: summary.success,
-            last_error: summary.last_error,
-            coordinates: summary.coordinates,
+            last_error,
+            coordinates,
         })
     }
 
@@ -255,10 +276,22 @@ impl DesktopService for DesktopServiceImpl {
             .await
             .map_err(|e| ServiceError::GeminiError(e.to_string()))?;
 
+        // Convert Vec<f32> bounding box to [i32; 4]
+        let bounding_box = if result.bounding_box.len() >= 4 {
+            Some([
+                result.bounding_box[0] as i32,
+                result.bounding_box[1] as i32,
+                result.bounding_box[2] as i32,
+                result.bounding_box[3] as i32,
+            ])
+        } else {
+            None
+        };
+
         Ok(DetectionResult {
             element_found: result.element_found,
             label: result.label,
-            bounding_box: Some(result.bounding_box),
+            bounding_box,
             action_type: result.action_type,
             confidence: result.confidence,
         })
@@ -281,7 +314,7 @@ impl DesktopService for DesktopServiceImpl {
         let automation = UIAutomation::new()
             .map_err(|e| ServiceError::AutomationError(format!("Failed to create UIAutomation: {}", e)))?;
 
-        let root = uia::element_from_hwnd(&automation, hwnd)
+        let root = uia::element_from_hwnd(&automation, hwnd.0 as isize)
             .map_err(|e| ServiceError::AutomationError(format!("Failed to get element from HWND: {}", e)))?;
 
         let options = uia::TreeDumpOptions {
@@ -311,7 +344,7 @@ impl DesktopService for DesktopServiceImpl {
         let automation = UIAutomation::new()
             .map_err(|e| ServiceError::AutomationError(format!("Failed to create UIAutomation: {}", e)))?;
 
-        let root = uia::element_from_hwnd(&automation, hwnd)
+        let root = uia::element_from_hwnd(&automation, hwnd.0 as isize)
             .map_err(|e| ServiceError::AutomationError(format!("Failed to get element from HWND: {}", e)))?;
 
         let find_all = req.find_all.unwrap_or(false);
@@ -340,7 +373,7 @@ impl DesktopService for DesktopServiceImpl {
         let automation = UIAutomation::new()
             .map_err(|e| ServiceError::AutomationError(format!("Failed to create UIAutomation: {}", e)))?;
 
-        let root = uia::element_from_hwnd(&automation, hwnd)
+        let root = uia::element_from_hwnd(&automation, hwnd.0 as isize)
             .map_err(|e| ServiceError::AutomationError(format!("Failed to get element from HWND: {}", e)))?;
 
         // Find the first matching element

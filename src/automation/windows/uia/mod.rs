@@ -5,10 +5,10 @@
 //! - CSS-style selectors with wildcard support
 //! - UIA pattern execution (Invoke, Value, Toggle, etc.)
 
-mod element;
-mod patterns;
-mod selector;
-mod tree;
+pub mod element;
+pub mod patterns;
+pub mod selector;
+pub mod tree;
 
 pub use element::*;
 pub use patterns::*;

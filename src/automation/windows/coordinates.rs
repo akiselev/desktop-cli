@@ -1,20 +1,21 @@
 use crate::error::{DesktopCliError, Result};
-use windows::Win32::Foundation::{HWND, POINT};
-use windows::Win32::UI::WindowsAndMessaging::{ClientToScreen, GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
+use windows::Win32::Foundation::{HWND, POINT, RECT};
+use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, GetWindowRect, SM_CXSCREEN, SM_CYSCREEN};
 
 /// Convert window-relative coordinates to screen coordinates
 pub fn window_to_screen_coords(hwnd: HWND, window_x: i32, window_y: i32) -> Result<(i32, i32)> {
-    let mut point = POINT {
-        x: window_x,
-        y: window_y,
-    };
-
     unsafe {
-        ClientToScreen(hwnd, &mut point)
-            .map_err(|e| DesktopCliError::CoordinateError(format!("ClientToScreen failed: {}", e)))?;
-    }
+        // Get the window rect to find the window's position on screen
+        let mut rect = RECT::default();
+        GetWindowRect(hwnd, &mut rect)
+            .map_err(|e| DesktopCliError::CoordinateError(format!("GetWindowRect failed: {}", e)))?;
 
-    Ok((point.x, point.y))
+        // Window coordinates are relative to the window, screen coordinates add the window position
+        let screen_x = rect.left + window_x;
+        let screen_y = rect.top + window_y;
+
+        Ok((screen_x, screen_y))
+    }
 }
 
 /// Normalize screen coordinates to 0-65535 range for SendInput

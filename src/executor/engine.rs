@@ -47,8 +47,9 @@ impl Executor {
             }
         }
 
-        // Parse HWND
+        // Parse HWND and convert to isize (Send-safe)
         let hwnd = parse_hwnd(hwnd_str)?;
+        let hwnd_raw = hwnd.0 as isize;
 
         // Initialize execution state
         let mut state = ExecutionState::new(validated_instructions.len());
@@ -64,7 +65,7 @@ impl Executor {
             tracing::info!("Step {}/{}: {}", i + 1, validated_instructions.len(), instruction);
 
             match self
-                .execute_single_instruction(hwnd, instruction, &retry_strategy)
+                .execute_single_instruction(hwnd_raw, instruction, &retry_strategy)
                 .await
             {
                 Ok(coords) => {
@@ -94,13 +95,13 @@ impl Executor {
     #[cfg(windows)]
     async fn execute_single_instruction(
         &self,
-        hwnd: HWND,
+        hwnd_raw: isize,
         instruction: &str,
         retry_strategy: &RetryStrategy,
     ) -> Result<(i32, i32)> {
         // Step 1: Capture screenshot
         tracing::debug!("Capturing screenshot of window");
-        let screenshot = capture_screenshot(hwnd, ScreenshotMethod::default())
+        let screenshot = capture_screenshot(HWND(hwnd_raw as *mut _), ScreenshotMethod::default())
             .map_err(|e| DesktopCliError::ExecutionError {
                 step: 0,
                 reason: format!("Screenshot failed: {}", e),
@@ -161,7 +162,7 @@ impl Executor {
         match detection_result.action_type.as_str() {
             "click" => {
                 tracing::debug!("Executing click at ({}, {})", center_x, center_y);
-                click_at_coords(hwnd, center_x, center_y).map_err(|e| {
+                click_at_coords(HWND(hwnd_raw as *mut _), center_x, center_y).map_err(|e| {
                     DesktopCliError::ExecutionError {
                         step: 3,
                         reason: format!("Click failed: {}", e),
@@ -172,7 +173,7 @@ impl Executor {
             "type" => {
                 // First click to focus, then type
                 tracing::debug!("Clicking to focus at ({}, {})", center_x, center_y);
-                click_at_coords(hwnd, center_x, center_y).map_err(|e| {
+                click_at_coords(HWND(hwnd_raw as *mut _), center_x, center_y).map_err(|e| {
                     DesktopCliError::ExecutionError {
                         step: 3,
                         reason: format!("Click to focus failed: {}", e),

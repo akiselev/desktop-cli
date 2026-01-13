@@ -76,12 +76,12 @@ fn try_capture_printwindow(hwnd: HWND) -> Result<Screenshot> {
 }
 
 /// Encode screenshot to base64 PNG
-fn encode_screenshot(screenshot: win_screenshot::capture::ScreenShot) -> Result<Screenshot> {
-    let width = screenshot.width();
-    let height = screenshot.height();
+fn encode_screenshot(screenshot: win_screenshot::capture::RgbBuf) -> Result<Screenshot> {
+    let width = screenshot.width;
+    let height = screenshot.height;
 
     // Get raw RGBA pixels
-    let pixels = screenshot.pixels();
+    let pixels = &screenshot.pixels;
 
     // Encode to PNG format
     let mut png_bytes = Vec::new();
@@ -94,14 +94,9 @@ fn encode_screenshot(screenshot: win_screenshot::capture::ScreenShot) -> Result<
             .write_header()
             .map_err(|e| DesktopCliError::ScreenshotError(format!("PNG encoding failed: {}", e)))?;
 
-        // Convert Vec<Color> to RGBA bytes
-        let rgba_bytes: Vec<u8> = pixels
-            .iter()
-            .flat_map(|color| vec![color.r, color.g, color.b, color.a])
-            .collect();
-
+        // pixels is already RGBA bytes
         writer
-            .write_image_data(&rgba_bytes)
+            .write_image_data(pixels)
             .map_err(|e| DesktopCliError::ScreenshotError(format!("PNG writing failed: {}", e)))?;
     }
 

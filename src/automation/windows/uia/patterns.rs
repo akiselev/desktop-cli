@@ -1,7 +1,11 @@
 //! UIA pattern execution (Invoke, Value, Toggle, Selection, etc.)
 
 use crate::rpc::types::PatternResult;
-use uiautomation::patterns::ExpandCollapseState;
+use uiautomation::patterns::{
+    UIExpandCollapsePattern, UIInvokePattern, UIScrollItemPattern, UISelectionItemPattern,
+    UITextPattern, UITogglePattern, UIValuePattern,
+};
+use uiautomation::types::ExpandCollapseState;
 use uiautomation::UIElement;
 
 /// Supported pattern operations
@@ -84,7 +88,7 @@ pub fn execute_pattern(elem: &UIElement, op: PatternOp, value: Option<&str>) -> 
 }
 
 fn invoke(elem: &UIElement) -> PatternResult {
-    match elem.get_invoke_pattern() {
+    match elem.get_pattern::<UIInvokePattern>() {
         Ok(pattern) => match pattern.invoke() {
             Ok(()) => PatternResult::ok(),
             Err(e) => PatternResult::err(format!("Invoke failed: {}", e)),
@@ -94,7 +98,7 @@ fn invoke(elem: &UIElement) -> PatternResult {
 }
 
 fn get_value(elem: &UIElement) -> PatternResult {
-    match elem.get_value_pattern() {
+    match elem.get_pattern::<UIValuePattern>() {
         Ok(pattern) => match pattern.get_value() {
             Ok(val) => PatternResult::ok_with_value(val),
             Err(e) => PatternResult::err(format!("GetValue failed: {}", e)),
@@ -104,7 +108,7 @@ fn get_value(elem: &UIElement) -> PatternResult {
 }
 
 fn set_value(elem: &UIElement, value: &str) -> PatternResult {
-    match elem.get_value_pattern() {
+    match elem.get_pattern::<UIValuePattern>() {
         Ok(pattern) => match pattern.set_value(value) {
             Ok(()) => PatternResult::ok_with_value(value.to_string()),
             Err(e) => PatternResult::err(format!("SetValue failed: {}", e)),
@@ -114,7 +118,7 @@ fn set_value(elem: &UIElement, value: &str) -> PatternResult {
 }
 
 fn toggle(elem: &UIElement) -> PatternResult {
-    match elem.get_toggle_pattern() {
+    match elem.get_pattern::<UITogglePattern>() {
         Ok(pattern) => match pattern.toggle() {
             Ok(()) => {
                 // Get the new state
@@ -130,7 +134,7 @@ fn toggle(elem: &UIElement) -> PatternResult {
 }
 
 fn get_toggle_state(elem: &UIElement) -> PatternResult {
-    match elem.get_toggle_pattern() {
+    match elem.get_pattern::<UITogglePattern>() {
         Ok(pattern) => match pattern.get_toggle_state() {
             Ok(state) => PatternResult::ok_with_value(format!("{:?}", state)),
             Err(e) => PatternResult::err(format!("GetToggleState failed: {}", e)),
@@ -140,7 +144,7 @@ fn get_toggle_state(elem: &UIElement) -> PatternResult {
 }
 
 fn select(elem: &UIElement) -> PatternResult {
-    match elem.get_selection_item_pattern() {
+    match elem.get_pattern::<UISelectionItemPattern>() {
         Ok(pattern) => match pattern.select() {
             Ok(()) => PatternResult::ok(),
             Err(e) => PatternResult::err(format!("Select failed: {}", e)),
@@ -150,7 +154,7 @@ fn select(elem: &UIElement) -> PatternResult {
 }
 
 fn deselect(elem: &UIElement) -> PatternResult {
-    match elem.get_selection_item_pattern() {
+    match elem.get_pattern::<UISelectionItemPattern>() {
         Ok(pattern) => match pattern.remove_from_selection() {
             Ok(()) => PatternResult::ok(),
             Err(e) => PatternResult::err(format!("Deselect failed: {}", e)),
@@ -160,7 +164,7 @@ fn deselect(elem: &UIElement) -> PatternResult {
 }
 
 fn is_selected(elem: &UIElement) -> PatternResult {
-    match elem.get_selection_item_pattern() {
+    match elem.get_pattern::<UISelectionItemPattern>() {
         Ok(pattern) => match pattern.is_selected() {
             Ok(selected) => PatternResult::ok_with_value(selected.to_string()),
             Err(e) => PatternResult::err(format!("IsSelected failed: {}", e)),
@@ -170,7 +174,7 @@ fn is_selected(elem: &UIElement) -> PatternResult {
 }
 
 fn expand(elem: &UIElement) -> PatternResult {
-    match elem.get_expand_collapse_pattern() {
+    match elem.get_pattern::<UIExpandCollapsePattern>() {
         Ok(pattern) => match pattern.expand() {
             Ok(()) => PatternResult::ok(),
             Err(e) => PatternResult::err(format!("Expand failed: {}", e)),
@@ -180,7 +184,7 @@ fn expand(elem: &UIElement) -> PatternResult {
 }
 
 fn collapse(elem: &UIElement) -> PatternResult {
-    match elem.get_expand_collapse_pattern() {
+    match elem.get_pattern::<UIExpandCollapsePattern>() {
         Ok(pattern) => match pattern.collapse() {
             Ok(()) => PatternResult::ok(),
             Err(e) => PatternResult::err(format!("Collapse failed: {}", e)),
@@ -190,8 +194,8 @@ fn collapse(elem: &UIElement) -> PatternResult {
 }
 
 fn get_expand_state(elem: &UIElement) -> PatternResult {
-    match elem.get_expand_collapse_pattern() {
-        Ok(pattern) => match pattern.get_expand_collapse_state() {
+    match elem.get_pattern::<UIExpandCollapsePattern>() {
+        Ok(pattern) => match pattern.get_state() {
             Ok(state) => {
                 let state_str = match state {
                     ExpandCollapseState::Collapsed => "Collapsed",
@@ -208,7 +212,7 @@ fn get_expand_state(elem: &UIElement) -> PatternResult {
 }
 
 fn get_text(elem: &UIElement) -> PatternResult {
-    match elem.get_text_pattern() {
+    match elem.get_pattern::<UITextPattern>() {
         Ok(pattern) => match pattern.get_document_range() {
             Ok(range) => match range.get_text(-1) {
                 Ok(text) => PatternResult::ok_with_value(text),
@@ -221,7 +225,7 @@ fn get_text(elem: &UIElement) -> PatternResult {
 }
 
 fn scroll_into_view(elem: &UIElement) -> PatternResult {
-    match elem.get_scroll_item_pattern() {
+    match elem.get_pattern::<UIScrollItemPattern>() {
         Ok(pattern) => match pattern.scroll_into_view() {
             Ok(()) => PatternResult::ok(),
             Err(e) => PatternResult::err(format!("ScrollIntoView failed: {}", e)),

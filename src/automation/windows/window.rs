@@ -1,8 +1,9 @@
 use crate::automation::types::{WindowInfo, WindowRect};
 use crate::error::{DesktopCliError, Result};
 use regex::Regex;
+use windows::core::PWSTR;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
-use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
+use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT, PROCESS_NAME_WIN32, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
 use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible};
 
 /// List all visible windows, optionally filtered by executable and/or title pattern
@@ -29,7 +30,7 @@ pub fn list_windows(
     // Apply filters
     let filtered = windows
         .into_iter()
-        .filter(|w| {
+        .filter(|w: &WindowInfo| {
             // Filter by executable path
             if let Some(exe) = exe_filter {
                 if !w.executable.to_lowercase().contains(&exe.to_lowercase()) {
@@ -113,8 +114,13 @@ fn get_process_executable(process_id: u32) -> Option<String> {
         let mut exe_path_buf = vec![0u16; 1024];
         let mut size = exe_path_buf.len() as u32;
 
-        QueryFullProcessImageNameW(process_handle, 0, &mut exe_path_buf, &mut size)
-            .ok()?;
+        QueryFullProcessImageNameW(
+            process_handle,
+            PROCESS_NAME_WIN32,
+            PWSTR::from_raw(exe_path_buf.as_mut_ptr()),
+            &mut size,
+        )
+        .ok()?;
 
         let exe_path = String::from_utf16_lossy(&exe_path_buf[..size as usize]);
         Some(exe_path)
@@ -127,6 +133,46 @@ pub fn parse_hwnd(hwnd_str: &str) -> Result<HWND> {
         .parse::<isize>()
         .map(|h| HWND(h as _))
         .map_err(|e| DesktopCliError::AutomationError(format!("Invalid HWND: {}", e)))
+}
+
+/// Get window info for a specific HWND
+pub fn get_window_info(hwnd: HWND) -> Result<WindowInfo> {
+    unsafe {
+        // Check if window is visible
+        if !IsWindowVisible(hwnd).as_bool() {
+            return Err(DesktopCliError::WindowNotFound(
+                "Window is not visible".to_string(),
+            ));
+        }
+
+        // Get window title
+        let mut title_buf = vec![0u16; 256];
+        let title_len = GetWindowTextW(hwnd, &mut title_buf);
+        let title = String::from_utf16_lossy(&title_buf[..title_len as usize]);
+
+        // Get process ID and executable path
+        let mut process_id = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut process_id));
+
+        let executable = get_process_executable(process_id).unwrap_or_default();
+
+        // Get window rect
+        let mut rect = RECT::default();
+        GetWindowRect(hwnd, &mut rect)
+            .map_err(|e| DesktopCliError::AutomationError(format!("GetWindowRect failed: {}", e)))?;
+
+        Ok(WindowInfo {
+            hwnd: format!("{}", hwnd.0 as isize),
+            title,
+            executable,
+            rect: WindowRect {
+                x: rect.left,
+                y: rect.top,
+                width: (rect.right - rect.left) as u32,
+                height: (rect.bottom - rect.top) as u32,
+            },
+        })
+    }
 }
 
 #[cfg(test)]
