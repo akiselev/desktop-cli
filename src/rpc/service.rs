@@ -7,7 +7,7 @@ use crate::rpc::types::*;
 #[cfg(windows)]
 use crate::automation::windows::{capture_screenshot, list_windows, parse_hwnd, ScreenshotMethod};
 #[cfg(windows)]
-use crate::automation::windows::uia::{self, PatternOp, Selector};
+use crate::automation::windows::uia::{self, PatternOp, Selector, TreeDumpOptions};
 #[cfg(windows)]
 use crate::executor::Executor;
 #[cfg(windows)]
@@ -51,6 +51,16 @@ pub trait DesktopService: Sync {
 
     /// Invoke a UIA pattern operation on an element
     async fn invoke_pattern(&self, req: InvokePatternRequest) -> Result<PatternResult, ServiceError>;
+
+    // =========================================================================
+    // LLM-Optimized Methods (compact output for AI agents)
+    // =========================================================================
+
+    /// Get a compact UI summary optimized for LLM consumption
+    async fn get_summary(&self, req: SummaryRequest) -> Result<String, ServiceError>;
+
+    /// Query elements using enhanced LLM-friendly syntax
+    async fn query_elements(&self, req: QueryRequest) -> Result<QueryResult, ServiceError>;
 }
 
 /// Implementation of the desktop service
@@ -421,6 +431,132 @@ impl DesktopService for DesktopServiceImpl {
 
     #[cfg(not(windows))]
     async fn invoke_pattern(&self, _req: InvokePatternRequest) -> Result<PatternResult, ServiceError> {
+        Err(ServiceError::PlatformNotSupported)
+    }
+
+    // =========================================================================
+    // LLM-Optimized Methods Implementation
+    // =========================================================================
+
+    #[cfg(windows)]
+    async fn get_summary(&self, req: SummaryRequest) -> Result<String, ServiceError> {
+        let hwnd = parse_hwnd(&req.hwnd)
+            .map_err(|e| ServiceError::AutomationError(e.to_string()))?;
+
+        let automation = UIAutomation::new()
+            .map_err(|e| ServiceError::AutomationError(format!("Failed to create UIAutomation: {}", e)))?;
+
+        let root = uia::element_from_hwnd(&automation, hwnd.0 as isize)
+            .map_err(|e| ServiceError::AutomationError(format!("Failed to get element from HWND: {}", e)))?;
+
+        // Get window title
+        let window_title = crate::automation::windows::get_window_info(hwnd)
+            .map(|info| info.title)
+            .unwrap_or_else(|_| "Unknown Window".to_string());
+
+        // First dump the tree to get UiaElement structure
+        let options = uia::TreeDumpOptions {
+            max_depth: req.max_depth.unwrap_or(10),
+            prune_offscreen: true,
+            prune_empty: true,
+            max_list_items: 10,
+        };
+
+        let tree = uia::dump_tree(&automation, &root, &options)
+            .map_err(|e| ServiceError::AutomationError(format!("Failed to dump tree: {}", e)))?;
+
+        // Build summary options
+        let summary_options = uia::SummaryOptions {
+            include_bounds: req.include_bounds.unwrap_or(false),
+            include_paths: req.include_paths.unwrap_or(false),
+            focus_region: req.focus_region,
+            max_depth: req.max_depth.unwrap_or(10),
+            min_size: 5,
+            role_filter: req.roles,
+        };
+
+        // Generate summary
+        let summary = uia::generate_summary(&tree, &window_title, &summary_options);
+
+        // Format output based on requested format
+        let format = req.format.as_deref().unwrap_or("json");
+        let output = match format {
+            "text" => uia::format_text_summary(&summary),
+            _ => serde_json::to_string_pretty(&summary)
+                .unwrap_or_else(|_| "{}".to_string()),
+        };
+
+        Ok(output)
+    }
+
+    #[cfg(not(windows))]
+    async fn get_summary(&self, _req: SummaryRequest) -> Result<String, ServiceError> {
+        Err(ServiceError::PlatformNotSupported)
+    }
+
+    #[cfg(windows)]
+    async fn query_elements(&self, req: QueryRequest) -> Result<QueryResult, ServiceError> {
+        let hwnd = parse_hwnd(&req.hwnd)
+            .map_err(|e| ServiceError::AutomationError(e.to_string()))?;
+
+        // Parse the enhanced query
+        let query = uia::parse_query(&req.query)
+            .map_err(|e| ServiceError::AutomationError(format!("Invalid query: {}", e)))?;
+
+        let automation = UIAutomation::new()
+            .map_err(|e| ServiceError::AutomationError(format!("Failed to create UIAutomation: {}", e)))?;
+
+        let root = uia::element_from_hwnd(&automation, hwnd.0 as isize)
+            .map_err(|e| ServiceError::AutomationError(format!("Failed to get element from HWND: {}", e)))?;
+
+        let find_all = req.all.unwrap_or(false);
+        let timeout = req.timeout_ms.unwrap_or(3000);
+
+        // Find elements using the parsed selector
+        let mut elements = uia::find_elements(&automation, &root, &query.selector, find_all || query.index.is_some(), timeout)
+            .map_err(|e| ServiceError::AutomationError(format!("Failed to find elements: {}", e)))?;
+
+        // Apply state filters
+        if !query.state_filters.is_empty() {
+            elements = uia::apply_state_filters(&elements, &query.state_filters);
+        }
+
+        // Apply index filter
+        if let Some(ref index) = query.index {
+            elements = uia::apply_index_filter(elements, index);
+        }
+
+        // Convert to ElementRef format
+        let mut id_gen = uia::RefIdGenerator::new();
+        let matches: Vec<ElementRef> = elements
+            .iter()
+            .map(|elem| {
+                let role = uia::infer_role(elem);
+                ElementRef {
+                    id: id_gen.next(role),
+                    role: role.as_str().to_string(),
+                    label: if !elem.name.is_empty() {
+                        elem.name.clone()
+                    } else if !elem.automation_id.is_empty() {
+                        elem.automation_id.clone()
+                    } else {
+                        role.as_str().to_string()
+                    },
+                    action: uia::infer_action(elem),
+                    selector: uia::generate_selector(elem),
+                }
+            })
+            .collect();
+
+        Ok(QueryResult {
+            count: matches.len(),
+            matches,
+            suggestions: Vec::new(),
+        })
+    }
+
+    #[cfg(not(windows))]
+    async fn query_elements(&self, _req: QueryRequest) -> Result<QueryResult, ServiceError> {
         Err(ServiceError::PlatformNotSupported)
     }
 }

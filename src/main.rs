@@ -15,6 +15,7 @@ use rpc::service::DesktopService;
 use rpc::{DesktopServiceClient, ScreenshotRequest, ExecuteRequest, DetectRequest};
 use rpc::{DumpTreeRequest, FindElementRequest, InvokePatternRequest};
 use rpc::{ListWindowsRequest, SetDefaultWindowRequest, GetDefaultWindowRequest};
+use rpc::{SummaryRequest, QueryRequest};
 
 /// Desktop Daemon - Control desktop applications through visual grounding
 #[derive(Parser, Debug)]
@@ -210,6 +211,94 @@ enum CallMethod {
         pattern: String,
 
         /// Value for set operations
+        #[arg(long)]
+        value: Option<String>,
+    },
+
+    // =========================================================================
+    // LLM-Optimized Commands (compact output for AI agents)
+    // =========================================================================
+
+    /// Get a compact UI summary optimized for LLM consumption
+    ///
+    /// Returns categorized elements (actions, navigation, content) with
+    /// minimal noise. Use this after every action to understand UI state.
+    Summary {
+        /// Window handle (HWND) - uses default if not specified
+        #[arg(long)]
+        hwnd: Option<String>,
+
+        /// Output format: json (default), text
+        #[arg(long, default_value = "json")]
+        format: String,
+
+        /// Include bounding boxes in output
+        #[arg(long)]
+        bounds: bool,
+
+        /// Include full hierarchy paths
+        #[arg(long)]
+        paths: bool,
+
+        /// Focus on region: x,y,w,h (e.g., "100,200,300,400")
+        #[arg(long)]
+        region: Option<String>,
+
+        /// Maximum depth (default: 10)
+        #[arg(long, default_value = "10")]
+        depth: u32,
+
+        /// Filter by roles (comma-separated: button,input,menu)
+        #[arg(long)]
+        roles: Option<String>,
+    },
+
+    /// Query elements using enhanced LLM-friendly syntax
+    ///
+    /// Examples:
+    ///   @button "Save"        - Button with name "Save"
+    ///   @input:enabled        - All enabled input fields
+    ///   #btnSave              - Element with automation ID
+    ///   @menu "File" > "Open" - Menu path navigation
+    ///   @tab:nth(2)           - Second tab
+    ///   ~below("Label") @input - Input below a label
+    Query {
+        /// Window handle (HWND) - uses default if not specified
+        #[arg(long)]
+        hwnd: Option<String>,
+
+        /// Query string (see examples in help)
+        query: String,
+
+        /// Return all matches (default: first only)
+        #[arg(long)]
+        all: bool,
+
+        /// Output format: full, compact, refs
+        #[arg(long, default_value = "compact")]
+        format: String,
+
+        /// Timeout in milliseconds
+        #[arg(long, default_value = "3000")]
+        timeout: u64,
+    },
+
+    /// Perform an action on an element and return UI summary
+    ///
+    /// Combines query + invoke + summary in one call for efficiency.
+    /// This is the recommended way for LLMs to interact with UI elements.
+    Do {
+        /// Window handle (HWND) - uses default if not specified
+        #[arg(long)]
+        hwnd: Option<String>,
+
+        /// Action: click, type, toggle, expand, collapse, select
+        action: String,
+
+        /// Target element query (e.g., @button "Save", #inputField)
+        target: String,
+
+        /// Value for type/set operations
         #[arg(long)]
         value: Option<String>,
     },
@@ -492,8 +581,81 @@ async fn cmd_call(method: CallMethod, port: u16) -> anyhow::Result<()> {
             }).await?;
             println!("{}", serde_json::to_string_pretty(&result)?);
         }
+
+        // LLM-Optimized Commands
+        CallMethod::Summary { hwnd, format, bounds, paths, region, depth, roles } => {
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
+
+            // Parse region if provided
+            let focus_region = region.as_ref().map(|r| {
+                let parts: Vec<i32> = r.split(',')
+                    .filter_map(|s| s.trim().parse().ok())
+                    .collect();
+                if parts.len() == 4 {
+                    Some([parts[0], parts[1], parts[2], parts[3]])
+                } else {
+                    None
+                }
+            }).flatten();
+
+            // Parse roles if provided
+            let roles_vec = roles.map(|r| {
+                r.split(',').map(|s| s.trim().to_string()).collect()
+            });
+
+            let result = client.get_summary(SummaryRequest {
+                hwnd,
+                format: Some(format),
+                include_bounds: Some(bounds),
+                include_paths: Some(paths),
+                focus_region,
+                max_depth: Some(depth),
+                roles: roles_vec,
+            }).await?;
+
+            // Output is already formatted by the server based on format option
+            println!("{}", result);
+        }
+
+        CallMethod::Query { hwnd, query, all, format, timeout } => {
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
+            let result = client.query_elements(QueryRequest {
+                hwnd,
+                query,
+                all: Some(all),
+                timeout_ms: Some(timeout),
+                format: Some(format),
+            }).await?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+
+        CallMethod::Do { hwnd, action, target, value } => {
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
+
+            // Map action to pattern
+            let pattern = match action.to_lowercase().as_str() {
+                "click" => "invoke",
+                "type" | "input" | "set" => "set-value",
+                "toggle" | "check" | "uncheck" => "toggle",
+                "expand" | "open" => "expand",
+                "collapse" | "close" => "collapse",
+                "select" | "choose" => "select",
+                "get" | "read" => "get-value",
+                _ => &action,
+            };
+
+            // First invoke the pattern
+            let result = client.invoke_pattern(InvokePatternRequest {
+                hwnd: hwnd.clone(),
+                selector: target,
+                pattern: pattern.to_string(),
+                value,
+            }).await?;
+
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
     }
-    
+
     Ok(())
 }
 

@@ -250,6 +250,9 @@ pub struct PatternResult {
     pub value: Option<String>,
     /// Error message if failed
     pub error: Option<String>,
+    /// Optional post-action summary of UI state
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<ActionSummary>,
 }
 
 impl PatternResult {
@@ -258,6 +261,7 @@ impl PatternResult {
             success: true,
             value: None,
             error: None,
+            summary: None,
         }
     }
 
@@ -266,6 +270,16 @@ impl PatternResult {
             success: true,
             value: Some(value),
             error: None,
+            summary: None,
+        }
+    }
+
+    pub fn ok_with_summary(summary: ActionSummary) -> Self {
+        Self {
+            success: true,
+            value: None,
+            error: None,
+            summary: Some(summary),
         }
     }
 
@@ -274,7 +288,117 @@ impl PatternResult {
             success: false,
             value: None,
             error: Some(msg.into()),
+            summary: None,
         }
     }
+}
+
+// ============================================================================
+// Summary Types (LLM-optimized compact output)
+// ============================================================================
+
+/// Request to get UI summary
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SummaryRequest {
+    pub hwnd: String,
+    /// Output format: "json" (default), "text", "compact"
+    pub format: Option<String>,
+    /// Include bounding boxes
+    pub include_bounds: Option<bool>,
+    /// Include full hierarchy paths
+    pub include_paths: Option<bool>,
+    /// Focus on region [x, y, width, height]
+    pub focus_region: Option<[i32; 4]>,
+    /// Maximum depth (default: 10)
+    pub max_depth: Option<u32>,
+    /// Filter by roles (e.g., ["button", "input"])
+    pub roles: Option<Vec<String>>,
+}
+
+/// Post-action summary showing what changed
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActionSummary {
+    /// What action was performed
+    pub action: String,
+    /// Target element description
+    pub target: String,
+    /// Whether the action succeeded
+    pub success: bool,
+    /// New focused element (if changed)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_focus: Option<String>,
+    /// Elements that appeared after action
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub appeared: Vec<String>,
+    /// Elements that disappeared after action
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub disappeared: Vec<String>,
+    /// Value changes (element -> new value)
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub value_changes: Vec<(String, String)>,
+    /// Nearby actionable elements (for context)
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub nearby_actions: Vec<String>,
+}
+
+impl Default for ActionSummary {
+    fn default() -> Self {
+        Self {
+            action: String::new(),
+            target: String::new(),
+            success: false,
+            new_focus: None,
+            appeared: Vec::new(),
+            disappeared: Vec::new(),
+            value_changes: Vec::new(),
+            nearby_actions: Vec::new(),
+        }
+    }
+}
+
+// ============================================================================
+// Enhanced Query Types
+// ============================================================================
+
+/// Request to query elements using enhanced selector syntax
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryRequest {
+    pub hwnd: String,
+    /// Query string (see QuerySyntax for format)
+    pub query: String,
+    /// Return all matches (default: first only)
+    pub all: Option<bool>,
+    /// Timeout in milliseconds
+    pub timeout_ms: Option<u64>,
+    /// Output format: "full", "compact", "refs"
+    pub format: Option<String>,
+}
+
+/// Compact element reference for query results
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ElementRef {
+    /// Short reference ID (e.g., "b1", "i3")
+    pub id: String,
+    /// Semantic role
+    pub role: String,
+    /// Display label
+    pub label: String,
+    /// Available action
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+    /// Selector that uniquely identifies this element
+    pub selector: String,
+}
+
+/// Query result with matches
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryResult {
+    /// Number of matches found
+    pub count: usize,
+    /// Matched elements
+    pub matches: Vec<ElementRef>,
+    /// Suggested selectors for similar elements
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub suggestions: Vec<String>,
 }
 
