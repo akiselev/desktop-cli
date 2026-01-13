@@ -3,10 +3,19 @@ use serde::{Deserialize, Serialize};
 /// Platform-agnostic window information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WindowInfo {
-    pub hwnd: String,  // String representation for cross-platform compatibility
+    /// String representation of HWND for cross-platform compatibility
+    pub hwnd: String,
+    /// Window title
     pub title: String,
+    /// Full path to executable
     pub executable: String,
+    /// Window rectangle
     pub rect: WindowRect,
+    /// Process ID
+    pub pid: u32,
+    /// Window class name (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub class_name: Option<String>,
 }
 
 /// Window rectangle coordinates

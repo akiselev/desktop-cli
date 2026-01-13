@@ -1,231 +1,63 @@
 mod agent;
 mod automation;
-mod daemon;
 mod error;
 mod executor;
 mod gemini;
+mod ops;
 mod rpc;
+mod targeting;
 
 use clap::{Parser, Subcommand};
-use std::net::Ipv4Addr;
-use tokio::net::TcpStream;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use targeting::{
+    format_suggestions, format_window_list, format_window_list_json, resolve_window,
+    resolve_with_element, WindowQuery,
+};
 
-use remoc::prelude::*;
-use rpc::service::DesktopService;
-use rpc::{DesktopServiceClient, ScreenshotRequest, ExecuteRequest, DetectRequest};
-use rpc::{DumpTreeRequest, FindElementRequest, InvokePatternRequest};
-use rpc::{ListWindowsRequest, SetDefaultWindowRequest, GetDefaultWindowRequest};
-use rpc::{SummaryRequest, QueryRequest};
-use rpc::{ClickRequest, TypeTextRequest, SendKeysRequest, ScrollRequest};
-use rpc::{AgentRequest, AgentResponse};
-
-/// Desktop Daemon - Control desktop applications through visual grounding
+/// Desktop CLI - Control desktop applications through UI Automation
+///
+/// A Windows desktop automation tool optimized for LLM agents.
 #[derive(Parser, Debug)]
 #[command(name = "desktop", author, version, about, long_about = None)]
 struct Cli {
+    /// Override window target (exe name, title:X, :index, hwnd:X, etc.)
+    #[arg(global = true, short = 't', long = "target")]
+    target: Option<String>,
+
     #[command(subcommand)]
     command: Commands,
 }
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Start the daemon as a background process
-    Start {
-        /// Comma-separated list of allowed executables (e.g., "notepad.exe,chrome.exe")
+    /// List visible windows with query hints
+    ///
+    /// Shows all visible windows with useful information for targeting.
+    /// Use --json for machine-readable output, --suggest for query hints.
+    Windows {
+        /// Filter by executable name (substring match)
         #[arg(long)]
-        allowed_executables: Option<String>,
+        exe: Option<String>,
 
-        /// Server port
-        #[arg(long, default_value = "9870")]
-        port: u16,
-
-        /// Gemini model to use
-        #[arg(long, default_value = "gemini-3-flash-preview")]
-        gemini_model: String,
-
-        /// Gemini API key (can also be set via GEMINI_API_KEY environment variable)
+        /// Filter by window title (substring match)
         #[arg(long)]
-        gemini_api_key: Option<String>,
+        title: Option<String>,
 
-        /// Run in foreground (don't daemonize)
-        #[arg(long, short = 'f')]
-        foreground: bool,
-
-        /// Filter windows by executable path (substring match, persists for session)
+        /// Output as JSON (for agents)
         #[arg(long)]
-        exe_filter: Option<String>,
+        json: bool,
 
-        /// Regex pattern to filter window titles (persists for session)
+        /// Show query suggestions for this HWND
         #[arg(long)]
-        title_pattern: Option<String>,
+        suggest: Option<String>,
     },
-
-    /// Stop the running daemon gracefully
-    Stop,
-
-    /// Force kill the daemon
-    Kill,
-
-    /// Show daemon status
-    Status,
-
-    /// View daemon logs
-    Logs {
-        /// Follow log output
-        #[arg(short, long)]
-        follow: bool,
-
-        /// Number of lines to show
-        #[arg(short = 'n', long, default_value = "50")]
-        lines: usize,
-    },
-
-    /// Window management commands
-    Window {
-        #[command(subcommand)]
-        cmd: WindowCommand,
-
-        /// Daemon port
-        #[arg(long, default_value = "9870", global = true)]
-        port: u16,
-    },
-
-    // =========================================================================
-    // Service Commands (flattened from 'call')
-    // =========================================================================
-
-    /// Take a screenshot of a window
-    Screenshot {
-        /// Window handle (HWND) - uses default if not specified
-        #[arg(long)]
-        hwnd: Option<String>,
-
-        /// Screenshot method (bitblt or printwindow)
-        #[arg(long)]
-        method: Option<String>,
-
-        /// Daemon port
-        #[arg(long, default_value = "9870")]
-        port: u16,
-    },
-
-    /// Execute natural language instructions on a window
-    Execute {
-        /// Window handle (HWND) - uses default if not specified
-        #[arg(long)]
-        hwnd: Option<String>,
-
-        /// Natural language instructions
-        #[arg(required = true)]
-        instructions: Vec<String>,
-
-        /// Retry strategy (none, basic, advanced)
-        #[arg(long)]
-        retry_strategy: Option<String>,
-
-        /// Daemon port
-        #[arg(long, default_value = "9870")]
-        port: u16,
-    },
-
-    /// Detect UI elements using visual grounding
-    Detect {
-        /// Window handle (HWND) - uses default if not specified
-        #[arg(long)]
-        hwnd: Option<String>,
-
-        /// Natural language query
-        query: String,
-
-        /// Daemon port
-        #[arg(long, default_value = "9870")]
-        port: u16,
-    },
-
-    /// Dump the UIA element tree for a window
-    DumpTree {
-        /// Window handle (HWND) - uses default if not specified
-        #[arg(long)]
-        hwnd: Option<String>,
-
-        /// Maximum depth
-        #[arg(long, default_value = "5")]
-        depth: u32,
-
-        /// Prune offscreen elements
-        #[arg(long)]
-        prune_offscreen: bool,
-
-        /// Prune empty elements (no name and no patterns)
-        #[arg(long)]
-        prune_empty: bool,
-
-        /// Max list items per container (0 = unlimited)
-        #[arg(long, default_value = "20")]
-        max_list_items: u32,
-
-        /// Daemon port
-        #[arg(long, default_value = "9870")]
-        port: u16,
-    },
-
-    /// Find UI elements by CSS-style selector
-    FindElement {
-        /// Window handle (HWND) - uses default if not specified
-        #[arg(long)]
-        hwnd: Option<String>,
-
-        /// CSS-style selector (e.g., "Button#save", "[name~='*OK*']")
-        selector: String,
-
-        /// Find all matches (default: first only)
-        #[arg(long)]
-        all: bool,
-
-        /// Timeout in milliseconds
-        #[arg(long, default_value = "3000")]
-        timeout: u64,
-
-        /// Daemon port
-        #[arg(long, default_value = "9870")]
-        port: u16,
-    },
-
-    /// Invoke a UIA pattern operation on an element
-    Invoke {
-        /// Window handle (HWND) - uses default if not specified
-        #[arg(long)]
-        hwnd: Option<String>,
-
-        /// CSS-style selector to find target element
-        selector: String,
-
-        /// Pattern operation (invoke, get-value, set-value, toggle, select, expand, collapse)
-        #[arg(long)]
-        pattern: String,
-
-        /// Value for set operations
-        #[arg(long)]
-        value: Option<String>,
-
-        /// Daemon port
-        #[arg(long, default_value = "9870")]
-        port: u16,
-    },
-
-    // =========================================================================
-    // LLM-Optimized Commands (compact output for AI agents)
-    // =========================================================================
 
     /// Get a compact UI summary optimized for LLM consumption
     ///
     /// Returns categorized elements (actions, navigation, content) with
     /// minimal noise. Use this after every action to understand UI state.
     Summary {
-        /// Window handle (HWND) - uses default if not specified
-        #[arg(long)]
-        hwnd: Option<String>,
+        /// Window query (e.g., "notepad", ":1", "title:PCB")
+        window: Option<String>,
 
         /// Output format: json (default), text
         #[arg(long, default_value = "json")]
@@ -250,10 +82,6 @@ enum Commands {
         /// Filter by roles (comma-separated: button,input,menu)
         #[arg(long)]
         roles: Option<String>,
-
-        /// Daemon port
-        #[arg(long, default_value = "9870")]
-        port: u16,
     },
 
     /// Query elements using enhanced LLM-friendly syntax
@@ -262,16 +90,13 @@ enum Commands {
     ///   @button "Save"        - Button with name "Save"
     ///   @input:enabled        - All enabled input fields
     ///   #btnSave              - Element with automation ID
-    ///   @menu "File" > "Open" - Menu path navigation
     ///   @tab:nth(2)           - Second tab
-    ///   ~below("Label") @input - Input below a label
     Query {
-        /// Window handle (HWND) - uses default if not specified
-        #[arg(long)]
-        hwnd: Option<String>,
+        /// Window query
+        window: String,
 
-        /// Query string (see examples in help)
-        query: String,
+        /// Element selector
+        selector: String,
 
         /// Return all matches (default: first only)
         #[arg(long)]
@@ -280,24 +105,133 @@ enum Commands {
         /// Output format: full, compact, refs
         #[arg(long, default_value = "compact")]
         format: String,
-
-        /// Timeout in milliseconds
-        #[arg(long, default_value = "3000")]
-        timeout: u64,
-
-        /// Daemon port
-        #[arg(long, default_value = "9870")]
-        port: u16,
     },
 
-    /// Perform an action on an element and return UI summary
+    /// Click an element
     ///
-    /// Combines query + invoke + summary in one call for efficiency.
-    /// This is the recommended way for LLMs to interact with UI elements.
-    Do {
-        /// Window handle (HWND) - uses default if not specified
+    /// Examples:
+    ///   click notepad "@button 'Save'"
+    ///   click altium "Button[name='Compile']"
+    ///   click :1 --coords 100,200
+    Click {
+        /// Window query
+        window: String,
+
+        /// Element selector (or use --coords)
+        selector: Option<String>,
+
+        /// Click type: left (default), right, double
+        #[arg(long, short = 'k', default_value = "left")]
+        kind: String,
+
+        /// Click at coordinates: x,y (instead of selector)
+        #[arg(long, short = 'c')]
+        coords: Option<String>,
+    },
+
+    /// Type text into an element
+    ///
+    /// Examples:
+    ///   type notepad "#editor" --value "Hello World"
+    ///   type altium "@input 'Name'" --value "Component1"
+    Type {
+        /// Window query
+        window: String,
+
+        /// Element selector (to focus before typing)
+        selector: String,
+
+        /// Text to type
         #[arg(long)]
-        hwnd: Option<String>,
+        value: String,
+    },
+
+    /// Send key combination
+    ///
+    /// Examples:
+    ///   keys notepad "ctrl+s"
+    ///   keys :1 "alt+f4"
+    Keys {
+        /// Window query
+        window: String,
+
+        /// Key combination (e.g., "ctrl+c", "alt+f4", "enter")
+        keys: String,
+    },
+
+    /// Scroll up or down
+    ///
+    /// Examples:
+    ///   scroll notepad up
+    ///   scroll :1 down --amount 5
+    Scroll {
+        /// Window query
+        window: String,
+
+        /// Direction: up or down
+        direction: String,
+
+        /// Number of scroll notches (default: 3)
+        #[arg(long, short = 'n', default_value = "3")]
+        amount: i32,
+    },
+
+    /// Take a screenshot of a window
+    Screenshot {
+        /// Window query
+        window: String,
+
+        /// Screenshot method (bitblt or printwindow)
+        #[arg(long)]
+        method: Option<String>,
+    },
+
+    /// Dump the UIA element tree for a window
+    DumpTree {
+        /// Window query
+        window: String,
+
+        /// Maximum depth
+        #[arg(long, default_value = "5")]
+        depth: u32,
+    },
+
+    /// Find UI elements by CSS-style selector
+    FindElement {
+        /// Window query
+        window: String,
+
+        /// CSS-style selector (e.g., "Button#save", "[name~='*OK*']")
+        selector: String,
+
+        /// Find all matches (default: first only)
+        #[arg(long)]
+        all: bool,
+    },
+
+    /// Invoke a UIA pattern operation on an element
+    Invoke {
+        /// Window query
+        window: String,
+
+        /// CSS-style selector to find target element
+        selector: String,
+
+        /// Pattern operation (invoke, get-value, set-value, toggle, select, expand, collapse)
+        #[arg(long)]
+        pattern: String,
+
+        /// Value for set operations
+        #[arg(long)]
+        value: Option<String>,
+    },
+
+    /// Perform an action on an element (combined query + invoke)
+    ///
+    /// Combines finding and acting on an element in one call.
+    Do {
+        /// Window query
+        window: String,
 
         /// Action: click, type, toggle, expand, collapse, select
         action: String,
@@ -308,314 +242,152 @@ enum Commands {
         /// Value for type/set operations
         #[arg(long)]
         value: Option<String>,
-
-        /// Daemon port
-        #[arg(long, default_value = "9870")]
-        port: u16,
-    },
-
-    // =========================================================================
-    // Input Action Commands
-    // =========================================================================
-
-    /// Click at coordinates or on an element
-    ///
-    /// Examples:
-    ///   click --coords 100,200              # Left click at coordinates
-    ///   click --selector "*[name='Save']"   # Click on element
-    ///   click --type double --selector ...  # Double-click
-    ///   click --type right --coords 100,200 # Right-click
-    Click {
-        /// Window handle (HWND) - uses default if not specified
-        #[arg(long)]
-        hwnd: Option<String>,
-
-        /// Click type: left (default), right, double
-        #[arg(long, short = 't', default_value = "left")]
-        r#type: String,
-
-        /// Click at coordinates: x,y (window-relative)
-        #[arg(long, short = 'c')]
-        coords: Option<String>,
-
-        /// Click on element matching selector
-        #[arg(long, short = 's')]
-        selector: Option<String>,
-
-        /// Daemon port
-        #[arg(long, default_value = "9870")]
-        port: u16,
-    },
-
-    /// Type text (optionally into a specific element)
-    ///
-    /// Examples:
-    ///   type "Hello World"                      # Type at current focus
-    ///   type "Hello" --selector "*[name='Input']" # Focus element first
-    Type {
-        /// Window handle (HWND) - uses default if not specified
-        #[arg(long)]
-        hwnd: Option<String>,
-
-        /// Text to type
-        text: String,
-
-        /// Focus this element first (selector)
-        #[arg(long, short = 's')]
-        selector: Option<String>,
-
-        /// Daemon port
-        #[arg(long, default_value = "9870")]
-        port: u16,
-    },
-
-    /// Send key combination
-    ///
-    /// Examples:
-    ///   keys "enter"           # Press Enter
-    ///   keys "ctrl+c"          # Copy
-    ///   keys "alt+f4"          # Close window
-    ///   keys "ctrl+shift+s"    # Save As
-    Keys {
-        /// Window handle (HWND) - uses default if not specified
-        #[arg(long)]
-        hwnd: Option<String>,
-
-        /// Key combination (e.g., "ctrl+c", "alt+f4", "enter")
-        keys: String,
-
-        /// Daemon port
-        #[arg(long, default_value = "9870")]
-        port: u16,
-    },
-
-    /// Scroll up or down
-    ///
-    /// Examples:
-    ///   scroll up              # Scroll up 3 notches
-    ///   scroll down --amount 5 # Scroll down 5 notches
-    Scroll {
-        /// Window handle (HWND) - uses default if not specified
-        #[arg(long)]
-        hwnd: Option<String>,
-
-        /// Direction: up or down
-        direction: String,
-
-        /// Number of scroll notches (default: 3)
-        #[arg(long, short = 'n', default_value = "3")]
-        amount: i32,
-
-        /// Daemon port
-        #[arg(long, default_value = "9870")]
-        port: u16,
-    },
-
-    // =========================================================================
-    // Agent Command (LLM-driven automation)
-    // =========================================================================
-
-    /// Run an AI agent to accomplish a goal using natural language
-    ///
-    /// The agent analyzes the screen and UI state, plans actions, and executes
-    /// them step by step until the goal is achieved or it determines failure.
-    ///
-    /// Examples:
-    ///   agent "Open the File menu and click Save"
-    ///   agent "Fill in the username field with 'admin' and click Login"
-    ///   agent "Find the search box and search for 'test'"
-    ///   agent --max-steps 30 "Navigate to Settings and enable dark mode"
-    Agent {
-        /// Window handle (HWND) - uses default if not specified
-        #[arg(long)]
-        hwnd: Option<String>,
-
-        /// Natural language goal/instructions
-        goal: String,
-
-        /// Maximum steps before giving up (default: 20)
-        #[arg(long, default_value = "20")]
-        max_steps: usize,
-
-        /// Disable screenshot context (faster but less accurate)
-        #[arg(long)]
-        no_screenshot: bool,
-
-        /// Disable UI tree context (faster but less accurate)
-        #[arg(long)]
-        no_ui_tree: bool,
-
-        /// Daemon port
-        #[arg(long, default_value = "9870")]
-        port: u16,
     },
 }
 
-#[derive(Subcommand, Debug)]
-enum WindowCommand {
-    /// List visible windows (with session filters applied)
-    List,
-
-    /// Set the default target window for subsequent commands
-    SetDefault {
-        /// Window index (1-based from list) or HWND
-        window: String,
-    },
-
-    /// Show the current default window
-    GetDefault,
-}
-
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Start {
-            allowed_executables,
-            port,
-            gemini_model,
-            gemini_api_key,
-            foreground,
-            exe_filter,
-            title_pattern,
+        Commands::Windows {
+            exe,
+            title,
+            json,
+            suggest,
         } => {
-            cmd_start(allowed_executables, port, gemini_model, gemini_api_key, foreground, exe_filter, title_pattern).await?;
-        }
-        Commands::Stop => {
-            cmd_stop()?;
-        }
-        Commands::Kill => {
-            cmd_kill()?;
-        }
-        Commands::Status => {
-            cmd_status();
-        }
-        Commands::Logs { follow, lines } => {
-            cmd_logs(follow, lines)?;
-        }
-        Commands::Window { cmd, port } => {
-            cmd_window(cmd, port).await?;
+            cmd_windows(exe, title, json, suggest)?;
         }
 
-        // Service commands (flattened)
-        Commands::Screenshot { hwnd, method, port } => {
-            let mut client = connect_to_daemon(port).await?;
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
-            let result = client.take_screenshot(ScreenshotRequest {
-                hwnd,
-                method,
-            }).await?;
-            println!("{{\"width\": {}, \"height\": {}, \"format\": \"{}\", \"base64_length\": {}}}",
-                result.width, result.height, result.format, result.base64_image.len());
-        }
-        Commands::Execute { hwnd, instructions, retry_strategy, port } => {
-            let mut client = connect_to_daemon(port).await?;
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
-            let result = client.execute_instructions(ExecuteRequest {
-                hwnd,
-                instructions,
-                retry_strategy,
-            }).await?;
-            println!("{}", serde_json::to_string_pretty(&result)?);
-        }
-        Commands::Detect { hwnd, query, port } => {
-            let mut client = connect_to_daemon(port).await?;
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
-            let result = client.detect_elements(DetectRequest {
-                hwnd,
-                query,
-            }).await?;
-            println!("{}", serde_json::to_string_pretty(&result)?);
-        }
-        Commands::DumpTree { hwnd, depth, prune_offscreen, prune_empty, max_list_items, port } => {
-            let mut client = connect_to_daemon(port).await?;
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
-            let result = client.dump_tree(DumpTreeRequest {
-                hwnd,
-                max_depth: Some(depth),
-                prune_offscreen: Some(prune_offscreen),
-                prune_empty: Some(prune_empty),
-                max_list_items: Some(max_list_items),
-            }).await?;
-            println!("{}", serde_json::to_string_pretty(&result)?);
-        }
-        Commands::FindElement { hwnd, selector, all, timeout, port } => {
-            let mut client = connect_to_daemon(port).await?;
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
-            let result = client.find_elements(FindElementRequest {
-                hwnd,
-                selector,
-                find_all: Some(all),
-                timeout_ms: Some(timeout),
-            }).await?;
-            println!("{}", serde_json::to_string_pretty(&result)?);
-        }
-        Commands::Invoke { hwnd, selector, pattern, value, port } => {
-            let mut client = connect_to_daemon(port).await?;
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
-            let result = client.invoke_pattern(InvokePatternRequest {
-                hwnd,
-                selector,
-                pattern,
-                value,
-            }).await?;
-            println!("{}", serde_json::to_string_pretty(&result)?);
-        }
+        Commands::Summary {
+            window,
+            format,
+            bounds,
+            paths,
+            region,
+            depth,
+            roles,
+        } => {
+            let hwnd = resolve_target(window.as_deref(), None, cli.target.as_deref())?;
+            let focus_region = parse_region(&region);
+            let roles_vec = roles.map(|r| r.split(',').map(|s| s.trim().to_string()).collect());
 
-        // LLM-Optimized Commands
-        Commands::Summary { hwnd, format, bounds, paths, region, depth, roles, port } => {
-            let mut client = connect_to_daemon(port).await?;
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
-
-            // Parse region if provided
-            let focus_region = region.as_ref().map(|r| {
-                let parts: Vec<i32> = r.split(',')
-                    .filter_map(|s| s.trim().parse().ok())
-                    .collect();
-                if parts.len() == 4 {
-                    Some([parts[0], parts[1], parts[2], parts[3]])
-                } else {
-                    None
-                }
-            }).flatten();
-
-            // Parse roles if provided
-            let roles_vec = roles.map(|r| {
-                r.split(',').map(|s| s.trim().to_string()).collect()
-            });
-
-            let result = client.get_summary(SummaryRequest {
-                hwnd,
-                format: Some(format),
-                include_bounds: Some(bounds),
-                include_paths: Some(paths),
-                focus_region,
-                max_depth: Some(depth),
-                roles: roles_vec,
-            }).await?;
-
-            // Output is already formatted by the server based on format option
+            let result =
+                ops::get_summary(&hwnd, &format, bounds, paths, focus_region, depth, roles_vec)?;
             println!("{}", result);
         }
 
-        Commands::Query { hwnd, query, all, format, timeout, port } => {
-            let mut client = connect_to_daemon(port).await?;
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
-            let result = client.query_elements(QueryRequest {
-                hwnd,
-                query,
-                all: Some(all),
-                timeout_ms: Some(timeout),
-                format: Some(format),
-            }).await?;
+        Commands::Query {
+            window,
+            selector,
+            all,
+            format: _,
+        } => {
+            let hwnd =
+                resolve_target_with_element(&window, &selector, cli.target.as_deref())?;
+            let result = ops::query_elements(&hwnd, &selector, all)?;
             println!("{}", serde_json::to_string_pretty(&result)?);
         }
 
-        Commands::Do { hwnd, action, target, value, port } => {
-            let mut client = connect_to_daemon(port).await?;
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
+        Commands::Click {
+            window,
+            selector,
+            kind,
+            coords,
+        } => {
+            let coords_parsed = parse_coords(&coords);
+
+            // If coordinates specified, just use window resolution
+            // If selector specified, use element-aware resolution
+            let hwnd = if coords_parsed.is_some() || selector.is_none() {
+                resolve_target(Some(&window), None, cli.target.as_deref())?
+            } else {
+                resolve_target_with_element(
+                    &window,
+                    selector.as_deref().unwrap_or(""),
+                    cli.target.as_deref(),
+                )?
+            };
+
+            ops::click(&hwnd, &kind, coords_parsed, selector.as_deref())?;
+            println!("Click successful");
+        }
+
+        Commands::Type {
+            window,
+            selector,
+            value,
+        } => {
+            let hwnd =
+                resolve_target_with_element(&window, &selector, cli.target.as_deref())?;
+            ops::type_text(&hwnd, &value, Some(&selector))?;
+            println!("Text typed successfully");
+        }
+
+        Commands::Keys { window, keys } => {
+            let _hwnd = resolve_target(Some(&window), None, cli.target.as_deref())?;
+            ops::send_keys(&keys)?;
+            println!("Keys sent successfully");
+        }
+
+        Commands::Scroll {
+            window,
+            direction,
+            amount,
+        } => {
+            let _hwnd = resolve_target(Some(&window), None, cli.target.as_deref())?;
+            ops::scroll(&direction, amount)?;
+            println!("Scroll successful");
+        }
+
+        Commands::Screenshot { window, method } => {
+            let hwnd = resolve_target(Some(&window), None, cli.target.as_deref())?;
+            let result = ops::take_screenshot(&hwnd, method.as_deref())?;
+            println!(
+                "{{\"width\": {}, \"height\": {}, \"format\": \"{}\", \"base64_length\": {}}}",
+                result.width,
+                result.height,
+                result.format,
+                result.base64_image.len()
+            );
+        }
+
+        Commands::DumpTree { window, depth } => {
+            let hwnd = resolve_target(Some(&window), None, cli.target.as_deref())?;
+            let result = ops::dump_tree(&hwnd, depth)?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+
+        Commands::FindElement {
+            window,
+            selector,
+            all,
+        } => {
+            let hwnd =
+                resolve_target_with_element(&window, &selector, cli.target.as_deref())?;
+            let result = ops::find_elements(&hwnd, &selector, all)?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+
+        Commands::Invoke {
+            window,
+            selector,
+            pattern,
+            value,
+        } => {
+            let hwnd =
+                resolve_target_with_element(&window, &selector, cli.target.as_deref())?;
+            let result = ops::invoke_pattern(&hwnd, &selector, &pattern, value.as_deref())?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+
+        Commands::Do {
+            window,
+            action,
+            target,
+            value,
+        } => {
+            let hwnd =
+                resolve_target_with_element(&window, &target, cli.target.as_deref())?;
 
             // Map action to pattern
             let pattern = match action.to_lowercase().as_str() {
@@ -629,383 +401,193 @@ async fn main() -> anyhow::Result<()> {
                 _ => &action,
             };
 
-            // Invoke the pattern
-            let result = client.invoke_pattern(InvokePatternRequest {
-                hwnd: hwnd.clone(),
-                selector: target,
-                pattern: pattern.to_string(),
-                value,
-            }).await?;
-
+            let result = ops::invoke_pattern(&hwnd, &target, pattern, value.as_deref())?;
             println!("{}", serde_json::to_string_pretty(&result)?);
         }
-
-        // Input Action Commands
-        Commands::Click { hwnd, r#type, coords, selector, port } => {
-            let mut client = connect_to_daemon(port).await?;
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
-
-            // Parse coordinates if provided
-            let coords = coords.map(|c| {
-                let parts: Vec<i32> = c.split(',')
-                    .filter_map(|s| s.trim().parse().ok())
-                    .collect();
-                if parts.len() == 2 {
-                    Some((parts[0], parts[1]))
-                } else {
-                    None
-                }
-            }).flatten();
-
-            let result = client.click(ClickRequest {
-                hwnd,
-                click_type: r#type,
-                coords,
-                selector,
-            }).await?;
-
-            if result.success {
-                println!("Click successful");
-            } else {
-                eprintln!("Click failed: {}", result.error.unwrap_or_default());
-                std::process::exit(1);
-            }
-        }
-
-        Commands::Type { hwnd, text, selector, port } => {
-            let mut client = connect_to_daemon(port).await?;
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
-
-            let result = client.type_text(TypeTextRequest {
-                hwnd,
-                text,
-                selector,
-            }).await?;
-
-            if result.success {
-                println!("Text typed successfully");
-            } else {
-                eprintln!("Type failed: {}", result.error.unwrap_or_default());
-                std::process::exit(1);
-            }
-        }
-
-        Commands::Keys { hwnd, keys, port } => {
-            let mut client = connect_to_daemon(port).await?;
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
-
-            let result = client.send_keys(SendKeysRequest {
-                hwnd,
-                keys,
-            }).await?;
-
-            if result.success {
-                println!("Keys sent successfully");
-            } else {
-                eprintln!("Send keys failed: {}", result.error.unwrap_or_default());
-                std::process::exit(1);
-            }
-        }
-
-        Commands::Scroll { hwnd, direction, amount, port } => {
-            let mut client = connect_to_daemon(port).await?;
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
-
-            let result = client.scroll(ScrollRequest {
-                hwnd,
-                direction,
-                amount,
-                coords: None,
-            }).await?;
-
-            if result.success {
-                println!("Scroll successful");
-            } else {
-                eprintln!("Scroll failed: {}", result.error.unwrap_or_default());
-                std::process::exit(1);
-            }
-        }
-
-        // Agent Command
-        Commands::Agent { hwnd, goal, max_steps, no_screenshot, no_ui_tree, port } => {
-            let mut client = connect_to_daemon(port).await?;
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
-
-            println!("Starting agent with goal: {}", goal);
-            println!("Max steps: {}, Screenshot: {}, UI Tree: {}",
-                max_steps, !no_screenshot, !no_ui_tree);
-            println!("---");
-
-            let result = client.run_agent(AgentRequest {
-                hwnd,
-                goal,
-                max_steps,
-                include_screenshot: !no_screenshot,
-                include_ui_summary: !no_ui_tree,
-            }).await?;
-
-            // Print each step as it happened
-            for step in &result.history {
-                let status = if step.success { "✓" } else { "✗" };
-                println!("[Step {}] {} {}: {}", step.step, status, step.action, step.action_details);
-                println!("  Reasoning: {}", step.reasoning);
-                if let Some(ref err) = step.error {
-                    println!("  Error: {}", err);
-                }
-            }
-
-            println!("---");
-            println!("Status: {} ({} steps)", result.status, result.steps_taken);
-            println!("Summary: {}", result.summary);
-
-            if !result.success {
-                std::process::exit(1);
-            }
-        }
     }
 
     Ok(())
 }
 
-async fn cmd_start(
-    allowed_executables: Option<String>,
-    port: u16,
-    gemini_model: String,
-    gemini_api_key: Option<String>,
-    foreground: bool,
-    exe_filter: Option<String>,
-    title_pattern: Option<String>,
+// ============================================================================
+// Command Implementations
+// ============================================================================
+
+fn cmd_windows(
+    exe: Option<String>,
+    title: Option<String>,
+    json: bool,
+    suggest: Option<String>,
 ) -> anyhow::Result<()> {
-    // Check if daemon is already running
-    if let Some(pid) = daemon::is_daemon_running() {
-        eprintln!("Daemon is already running (PID: {})", pid);
-        std::process::exit(1);
-    }
+    let windows = ops::list_windows(exe.as_deref(), title.as_deref())?;
 
-    // Get Gemini API key from args or environment
-    let gemini_api_key = gemini_api_key
-        .or_else(|| std::env::var("GEMINI_API_KEY").ok());
-
-    // Validate Gemini API key
-    if gemini_api_key.is_none() {
-        eprintln!("Error: Gemini API key is required. Set GEMINI_API_KEY environment variable or use --gemini-api-key");
-        std::process::exit(1);
-    }
-
-    // Parse allowed executables
-    let allowed_executables = allowed_executables
-        .as_ref()
-        .map(|s| {
-            s.split(',')
-                .map(|e| e.trim().to_string())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-
-    if foreground {
-        // Run in foreground with console logging
-        setup_console_logging();
-        run_server(port, gemini_model, gemini_api_key.unwrap(), allowed_executables, exe_filter, title_pattern).await?;
+    if let Some(hwnd) = suggest {
+        // Show suggestions for specific window
+        match format_suggestions(&hwnd, &windows) {
+            Some(output) => println!("{}", output),
+            None => eprintln!("Window with HWND {} not found", hwnd),
+        }
+    } else if json {
+        // JSON output for agents
+        let output = format_window_list_json(&windows);
+        println!("{}", serde_json::to_string_pretty(&output)?);
     } else {
-        // Daemonize the process
-        println!("Starting Desktop daemon on port {}...", port);
-        
-        daemon::daemonize(port).map_err(|e| anyhow::anyhow!("{}", e))?;
-        
-        // After daemonization, we're in the child process
-        // Setup file-based logging
-        setup_file_logging();
-        
-        // Write our PID (daemonize creates the file but let's ensure it's correct)
-        let pid = std::process::id();
-        daemon::write_pid(pid)?;
-        
-        tracing::info!("Desktop daemon started (PID: {})", pid);
-        
-        run_server(port, gemini_model, gemini_api_key.unwrap(), allowed_executables, exe_filter, title_pattern).await?;
+        // Human-readable list
+        println!("{}", format_window_list(&windows));
     }
 
     Ok(())
 }
 
-fn cmd_stop() -> anyhow::Result<()> {
-    match daemon::stop_daemon() {
-        Ok(()) => {
-            println!("Daemon stopped gracefully");
-            Ok(())
-        }
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            std::process::exit(1);
-        }
-    }
-}
+// ============================================================================
+// Target Resolution Helpers
+// ============================================================================
 
-fn cmd_kill() -> anyhow::Result<()> {
-    match daemon::kill_daemon() {
-        Ok(pid) => {
-            println!("Daemon killed (PID: {})", pid);
-            Ok(())
-        }
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            std::process::exit(1);
-        }
-    }
-}
+/// Resolve window target, optionally with element disambiguation
+fn resolve_target(
+    window_arg: Option<&str>,
+    _element_selector: Option<&str>,
+    flag_target: Option<&str>,
+) -> anyhow::Result<String> {
+    // Priority: window_arg > flag > env var
+    let query_str = window_arg
+        .or(flag_target)
+        .or_else(|| std::env::var("DESKTOP_WINDOW").ok().as_deref().map(|_| {
+            // This closure doesn't work well, handle separately
+            ""
+        }))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "No window specified. Use a window query or set DESKTOP_WINDOW env var.\n\
+                 Run 'desktop windows' to see available windows."
+            )
+        })?;
 
-fn cmd_status() {
-    let status = daemon::DaemonStatus::check();
-    
-    if status.running {
-        println!("Desktop daemon is running (PID: {})", status.pid.unwrap());
+    // Check env var if nothing else set
+    let query_str = if query_str.is_empty() {
+        std::env::var("DESKTOP_WINDOW")
+            .map_err(|_| anyhow::anyhow!("No window specified"))?
     } else {
-        println!("Desktop daemon is not running");
-    }
-    
-    println!();
-    println!("PID file: {}", status.pid_file.display());
-    println!("Log file: {}", status.log_file.display());
-}
-
-fn cmd_logs(follow: bool, lines: usize) -> anyhow::Result<()> {
-    if follow {
-        daemon::follow_logs().map_err(|e| anyhow::anyhow!("{}", e))?;
-    } else {
-        match daemon::view_logs(lines) {
-            Ok(log_lines) => {
-                for line in log_lines {
-                    println!("{}", line);
-                }
-            }
-            Err(e) => {
-                eprintln!("Error: {}", e);
-                std::process::exit(1);
-            }
-        }
-    }
-    Ok(())
-}
-
-async fn cmd_window(cmd: WindowCommand, port: u16) -> anyhow::Result<()> {
-    let mut client = connect_to_daemon(port).await?;
-
-    match cmd {
-        WindowCommand::List => {
-            let result = client.list_windows(ListWindowsRequest::default()).await?;
-            // Print with 1-based index for user-friendly selection
-            for (i, window) in result.iter().enumerate() {
-                println!("[{}] {} - {} ({})", i + 1, window.hwnd, window.title, window.executable);
-            }
-        }
-        WindowCommand::SetDefault { window } => {
-            client.set_default_window(SetDefaultWindowRequest { window }).await?;
-            println!("Default window set");
-        }
-        WindowCommand::GetDefault => {
-            let result = client.get_default_window(GetDefaultWindowRequest::default()).await?;
-            if let Some(hwnd) = result.hwnd {
-                println!("Default window: {} ({})", hwnd, result.title.unwrap_or_default());
-            } else {
-                println!("No default window set");
-            }
-        }
-    }
-
-    Ok(())
-}
-
-async fn connect_to_daemon(port: u16) -> anyhow::Result<DesktopServiceClient> {
-    let socket = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).await
-        .map_err(|e| anyhow::anyhow!("Failed to connect to daemon on port {}: {}", port, e))?;
-    
-    let (socket_rx, socket_tx) = socket.into_split();
-    
-    let (conn, _tx, mut rx): (_, rch::base::Sender<()>, rch::base::Receiver<DesktopServiceClient>) =
-        remoc::Connect::io(remoc::Cfg::default(), socket_rx, socket_tx).await?;
-    
-    tokio::spawn(conn);
-    
-    rx.recv().await?
-        .ok_or_else(|| anyhow::anyhow!("Failed to receive service client"))
-}
-
-/// Resolve hwnd from optional CLI arg or get default from daemon
-async fn resolve_hwnd(client: &mut DesktopServiceClient, hwnd: Option<String>) -> anyhow::Result<String> {
-    if let Some(h) = hwnd {
-        Ok(h)
-    } else {
-        let result = client.get_default_window(GetDefaultWindowRequest::default()).await?;
-        result.hwnd.ok_or_else(|| anyhow::anyhow!("No window specified and no default window set. Use 'desktop window set-default <window>' first."))
-    }
-}
-
-fn setup_console_logging() {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "desktop_cli=info".into()),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
-}
-
-fn setup_file_logging() {
-    // For daemon mode, we write to the log file
-    // The daemonize crate redirects stdout/stderr to the log file,
-    // so we can just use the default fmt layer
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "desktop_cli=info".into()),
-        )
-        .with(tracing_subscriber::fmt::layer().with_ansi(false))
-        .init();
-}
-
-async fn run_server(
-    port: u16,
-    gemini_model: String,
-    gemini_api_key: String,
-    allowed_executables: Vec<String>,
-    exe_filter: Option<String>,
-    title_pattern: Option<String>,
-) -> anyhow::Result<()> {
-    tracing::info!(
-        "Starting Desktop Daemon on port {} with Gemini model {}",
-        port,
-        gemini_model
-    );
-
-    if !allowed_executables.is_empty() {
-        tracing::info!("Allowed executables: {:?}", allowed_executables);
-    } else {
-        tracing::warn!("No executable whitelist set - all windows are accessible");
-    }
-
-    if let Some(ref filter) = exe_filter {
-        tracing::info!("Executable filter: {}", filter);
-    }
-    if let Some(ref pattern) = title_pattern {
-        tracing::info!("Title pattern: {}", pattern);
-    }
-
-    // Initialize Gemini client
-    let gemini_client = gemini::GeminiClient::new(gemini_api_key, gemini_model)?;
-
-    tracing::info!("Gemini client initialized with model: {}", gemini_client.model());
-
-    // Create RPC server configuration
-    let server_config = rpc::server::RpcServerConfig {
-        port,
-        gemini_client,
-        allowed_executables,
-        exe_filter,
-        title_pattern,
+        query_str.to_string()
     };
 
-    // Start the RPC server
-    rpc::start_server(server_config).await?;
+    let query = WindowQuery::parse(&query_str)
+        .map_err(|e| anyhow::anyhow!("Invalid window query: {}", e))?;
 
-    Ok(())
+    let windows = ops::list_windows(None, None)?;
+
+    match resolve_window(&query, &windows) {
+        Ok(window) => Ok(window.hwnd.clone()),
+        Err(targeting::ResolutionError::AmbiguousWindow { query, windows }) => {
+            Err(format_ambiguous_error(&query, &windows))
+        }
+        Err(e) => Err(anyhow::anyhow!("{}", e)),
+    }
+}
+
+/// Resolve with element-aware disambiguation
+fn resolve_target_with_element(
+    window_arg: &str,
+    element_selector: &str,
+    flag_target: Option<&str>,
+) -> anyhow::Result<String> {
+    let query_str = flag_target.unwrap_or(window_arg);
+
+    let query = WindowQuery::parse(query_str)
+        .map_err(|e| anyhow::anyhow!("Invalid window query: {}", e))?;
+
+    let windows = ops::list_windows(None, None)?;
+
+    // Use element-aware resolution
+    match resolve_with_element(&query, element_selector, &windows, |hwnd, selector| {
+        ops::element_exists(hwnd, selector).map_err(|e| e.to_string())
+    }) {
+        Ok(window) => Ok(window.hwnd.clone()),
+        Err(targeting::ResolutionError::AmbiguousWindow { query, windows }) => {
+            Err(format_ambiguous_error(&query, &windows))
+        }
+        Err(targeting::ResolutionError::AmbiguousElement {
+            selector,
+            windows,
+        }) => {
+            let mut msg = format!(
+                "Found '{}' in {} windows:\n",
+                selector,
+                windows.len()
+            );
+            for (i, w) in windows.iter().enumerate() {
+                msg.push_str(&format!(
+                    "  [{}] {} - {} (hwnd:{})\n",
+                    i + 1,
+                    extract_exe_name(&w.executable),
+                    w.title,
+                    w.hwnd
+                ));
+            }
+            msg.push_str("Tip: Use ':1' or refine with 'title:...'");
+            Err(anyhow::anyhow!("{}", msg))
+        }
+        Err(e) => Err(anyhow::anyhow!("{}", e)),
+    }
+}
+
+fn format_ambiguous_error(
+    query: &str,
+    windows: &[automation::types::WindowInfo],
+) -> anyhow::Error {
+    let mut msg = format!("Found {} windows matching '{}':\n", windows.len(), query);
+    for (i, w) in windows.iter().enumerate() {
+        msg.push_str(&format!(
+            "  [:{}] {} - {} (hwnd:{}, pid:{})\n",
+            i + 1,
+            extract_exe_name(&w.executable),
+            w.title,
+            w.hwnd,
+            w.pid
+        ));
+    }
+    msg.push_str("Tip: Use ':1', ':2', etc. or refine with 'title:...'");
+    anyhow::anyhow!("{}", msg)
+}
+
+fn extract_exe_name(exe_path: &str) -> String {
+    exe_path
+        .rsplit(['\\', '/'])
+        .next()
+        .unwrap_or(exe_path)
+        .trim_end_matches(".exe")
+        .trim_end_matches(".EXE")
+        .to_lowercase()
+}
+
+// ============================================================================
+// Parsing Helpers
+// ============================================================================
+
+fn parse_region(region: &Option<String>) -> Option<[i32; 4]> {
+    region.as_ref().and_then(|r| {
+        let parts: Vec<i32> = r
+            .split(',')
+            .filter_map(|s| s.trim().parse().ok())
+            .collect();
+        if parts.len() == 4 {
+            Some([parts[0], parts[1], parts[2], parts[3]])
+        } else {
+            None
+        }
+    })
+}
+
+fn parse_coords(coords: &Option<String>) -> Option<(i32, i32)> {
+    coords.as_ref().and_then(|c| {
+        let parts: Vec<i32> = c
+            .split(',')
+            .filter_map(|s| s.trim().parse().ok())
+            .collect();
+        if parts.len() == 2 {
+            Some((parts[0], parts[1]))
+        } else {
+            None
+        }
+    })
 }

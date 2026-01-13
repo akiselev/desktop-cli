@@ -3,7 +3,7 @@ name = "desktop-cli"
 version = "0.1.0"
 edition = "2021"
 
-description = "Desktop automation daemon with UI Automation (UIA) support for Windows. Query UI element trees, find elements with CSS-style selectors, and interact via accessibility patterns."
+description = "Desktop automation CLI with UI Automation (UIA) support for Windows. Query UI element trees, find elements with CSS-style selectors, and interact via accessibility patterns."
 license = "GPL-3.0-only"
 repository = "https://github.com/akiselev/desktop-cli"
 homepage = "https://github.com/akiselev/desktop-cli"
@@ -13,10 +13,12 @@ authors = ["Alexander Kiselev <alex@akiselev.com>"]
 keywords = ["automation", "accessibility", "windows", "uiautomation", "rpc", "llm"]
 categories = ["command-line-utilities", "accessibility", "api-bindings", "os::windows-apis"]
 
+[[bin]]
+name = "desktop"
+path = "src/main.rs"
+
 [dependencies]
-# RPC
-remoc = { version = "0.18", features = ["rtc"] }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 
 # HTTP Client
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
@@ -43,10 +45,7 @@ directories = "5"
 dirs = "5"
 wildmatch = "2.6"
 
-# Daemon (Unix only)
-[target.'cfg(unix)'.dependencies]
-daemonize = "0.5"
-nix = { version = "0.29", features = ["signal", "process"] }
+# Unix-specific (currently none needed)
 
 # Windows Automation (Windows only)
 [target.'cfg(windows)'.dependencies]

@@ -82,6 +82,15 @@ unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> B
         return BOOL(1);
     }
 
+    // Get window class name
+    let mut class_buf = vec![0u16; 256];
+    let class_len = windows::Win32::UI::WindowsAndMessaging::GetClassNameW(hwnd, &mut class_buf);
+    let class_name = if class_len > 0 {
+        Some(String::from_utf16_lossy(&class_buf[..class_len as usize]))
+    } else {
+        None
+    };
+
     // Get window rect
     let mut rect = RECT::default();
     let _ = GetWindowRect(hwnd, &mut rect);
@@ -96,6 +105,8 @@ unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> B
             width: (rect.right - rect.left) as u32,
             height: (rect.bottom - rect.top) as u32,
         },
+        pid: process_id,
+        class_name,
     });
 
     BOOL(1) // TRUE = continue enumeration
@@ -156,6 +167,15 @@ pub fn get_window_info(hwnd: HWND) -> Result<WindowInfo> {
 
         let executable = get_process_executable(process_id).unwrap_or_default();
 
+        // Get window class name
+        let mut class_buf = vec![0u16; 256];
+        let class_len = windows::Win32::UI::WindowsAndMessaging::GetClassNameW(hwnd, &mut class_buf);
+        let class_name = if class_len > 0 {
+            Some(String::from_utf16_lossy(&class_buf[..class_len as usize]))
+        } else {
+            None
+        };
+
         // Get window rect
         let mut rect = RECT::default();
         GetWindowRect(hwnd, &mut rect)
@@ -171,6 +191,8 @@ pub fn get_window_info(hwnd: HWND) -> Result<WindowInfo> {
                 width: (rect.right - rect.left) as u32,
                 height: (rect.bottom - rect.top) as u32,
             },
+            pid: process_id,
+            class_name,
         })
     }
 }

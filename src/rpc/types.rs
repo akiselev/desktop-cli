@@ -1,11 +1,8 @@
-use remoc::rtc::CallError;
 use serde::{Deserialize, Serialize};
 
-/// Error type for RPC service calls
+/// Error type for operations (previously RPC service calls)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ServiceError {
-    /// Remote call failed
-    Call(String),
     /// Window not found
     WindowNotFound(String),
     /// Screenshot capture failed
@@ -22,16 +19,9 @@ pub enum ServiceError {
     PlatformNotSupported,
 }
 
-impl From<CallError> for ServiceError {
-    fn from(err: CallError) -> Self {
-        ServiceError::Call(format!("{}", err))
-    }
-}
-
 impl std::fmt::Display for ServiceError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ServiceError::Call(msg) => write!(f, "RPC call error: {}", msg),
             ServiceError::WindowNotFound(msg) => write!(f, "Window not found: {}", msg),
             ServiceError::ScreenshotError(msg) => write!(f, "Screenshot error: {}", msg),
             ServiceError::GeminiError(msg) => write!(f, "Gemini error: {}", msg),
