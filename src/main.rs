@@ -194,6 +194,10 @@ enum Commands {
         /// Maximum depth
         #[arg(long, default_value = "5")]
         depth: u32,
+
+        /// Output as JSON (default is compact text)
+        #[arg(long)]
+        json: bool,
     },
 
     /// Find UI elements by CSS-style selector
@@ -351,10 +355,14 @@ fn main() -> anyhow::Result<()> {
             );
         }
 
-        Commands::DumpTree { window, depth } => {
+        Commands::DumpTree { window, depth, json } => {
             let hwnd = resolve_target(Some(&window), None, cli.target.as_deref())?;
             let result = ops::dump_tree(&hwnd, depth)?;
-            println!("{}", serde_json::to_string_pretty(&result)?);
+            if json {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                println!("{}", format_tree_text(&result, 0));
+            }
         }
 
         Commands::FindElement {
@@ -590,4 +598,64 @@ fn parse_coords(coords: &Option<String>) -> Option<(i32, i32)> {
             None
         }
     })
+}
+
+/// Format UIA tree as compact LLM-friendly text
+fn format_tree_text(elem: &rpc::types::UiaElement, indent: usize) -> String {
+    let mut output = String::new();
+    let prefix = "  ".repeat(indent);
+    
+    // Build a compact one-line summary for this element
+    // Format: [Type] "Name" #id @class [patterns] (bounds)
+    let mut line = format!("{}{}", prefix, elem.control_type);
+    
+    // Add name if present
+    if !elem.name.is_empty() {
+        line.push_str(&format!(" \"{}\"", elem.name));
+    }
+    
+    // Add automation_id if present and different from name
+    if !elem.automation_id.is_empty() && elem.automation_id != elem.name {
+        line.push_str(&format!(" #{}", elem.automation_id));
+    }
+    
+    // Add value if present
+    if let Some(ref v) = elem.value {
+        if !v.is_empty() && v != &elem.name {
+            // Truncate long values
+            let display_val = if v.len() > 30 { 
+                format!("{}...", &v[..27]) 
+            } else { 
+                v.clone() 
+            };
+            line.push_str(&format!(" ={}", display_val));
+        }
+    }
+    
+    // Add patterns if any actionable ones
+    let actionable: Vec<&str> = elem.patterns.iter()
+        .map(|s| s.as_str())
+        .filter(|p| !["Transform", "Text", "ItemContainer", "VirtualizedItem"].contains(p))
+        .collect();
+    if !actionable.is_empty() {
+        line.push_str(&format!(" [{}]", actionable.join(",")));
+    }
+    
+    // Add offscreen/disabled markers
+    if elem.is_offscreen {
+        line.push_str(" (offscreen)");
+    }
+    if !elem.is_enabled {
+        line.push_str(" (disabled)");
+    }
+    
+    output.push_str(&line);
+    output.push('\n');
+    
+    // Recurse into children
+    for child in &elem.children {
+        output.push_str(&format_tree_text(child, indent + 1));
+    }
+    
+    output
 }

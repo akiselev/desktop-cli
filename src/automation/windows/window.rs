@@ -6,12 +6,98 @@ use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
 use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT, PROCESS_NAME_WIN32, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
 use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible};
 
-/// List all visible windows, optionally filtered by executable and/or title pattern
+/// List all visible windows, optionally filtered by executable and/or title pattern.
+/// 
+/// By default, windows belonging to the current process and its ancestor processes
+/// (e.g., the terminal running this CLI) are excluded to prevent self-matching.
 pub fn list_windows(
     exe_filter: Option<&str>,
     title_pattern: Option<&str>,
 ) -> Result<Vec<WindowInfo>> {
+    list_windows_impl(exe_filter, title_pattern, true)
+}
+
+/// List all visible windows, with option to include own process windows.
+pub fn list_windows_include_self(
+    exe_filter: Option<&str>,
+    title_pattern: Option<&str>,
+) -> Result<Vec<WindowInfo>> {
+    list_windows_impl(exe_filter, title_pattern, false)
+}
+
+/// Get the parent process ID for a given process.
+fn get_parent_pid(pid: u32) -> Option<u32> {
+    use windows::Win32::System::Threading::{
+        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    use windows::Wdk::System::Threading::{NtQueryInformationProcess, ProcessBasicInformation};
+    
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        
+        #[repr(C)]
+        struct ProcessBasicInfo {
+            reserved1: *mut std::ffi::c_void,
+            peb_base_address: *mut std::ffi::c_void,
+            reserved2: [*mut std::ffi::c_void; 2],
+            unique_process_id: usize,
+            inherited_from_unique_process_id: usize,
+        }
+        
+        let mut info: ProcessBasicInfo = std::mem::zeroed();
+        let mut return_length = 0u32;
+        
+        let status = NtQueryInformationProcess(
+            handle,
+            ProcessBasicInformation,
+            &mut info as *mut _ as *mut std::ffi::c_void,
+            std::mem::size_of::<ProcessBasicInfo>() as u32,
+            &mut return_length,
+        );
+        
+        let _ = windows::Win32::Foundation::CloseHandle(handle);
+        
+        if status.is_ok() && info.inherited_from_unique_process_id != 0 {
+            Some(info.inherited_from_unique_process_id as u32)
+        } else {
+            None
+        }
+    }
+}
+
+/// Collect all ancestor PIDs (parent, grandparent, etc.) up to a reasonable limit.
+fn get_ancestor_pids(start_pid: u32) -> std::collections::HashSet<u32> {
+    let mut ancestors = std::collections::HashSet::new();
+    ancestors.insert(start_pid);
+    
+    let mut current = start_pid;
+    // Walk up to 10 levels to avoid infinite loops from circular references
+    for _ in 0..10 {
+        match get_parent_pid(current) {
+            Some(parent) if parent != 0 && parent != current && !ancestors.contains(&parent) => {
+                ancestors.insert(parent);
+                current = parent;
+            }
+            _ => break,
+        }
+    }
+    
+    ancestors
+}
+
+fn list_windows_impl(
+    exe_filter: Option<&str>,
+    title_pattern: Option<&str>,
+    exclude_own_process: bool,
+) -> Result<Vec<WindowInfo>> {
     let mut windows = Vec::new();
+    
+    // Collect our own PID and all ancestor PIDs (terminal, shell, etc.)
+    let excluded_pids = if exclude_own_process {
+        get_ancestor_pids(std::process::id())
+    } else {
+        std::collections::HashSet::new()
+    };
 
     // Compile regex pattern if provided
     let title_regex = title_pattern
@@ -31,6 +117,11 @@ pub fn list_windows(
     let filtered = windows
         .into_iter()
         .filter(|w: &WindowInfo| {
+            // Skip windows from our own process tree (CLI + terminal + shell ancestors)
+            if excluded_pids.contains(&w.pid) {
+                return false;
+            }
+
             // Filter by executable path
             if let Some(exe) = exe_filter {
                 if !w.executable.to_lowercase().contains(&exe.to_lowercase()) {
