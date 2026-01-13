@@ -18,6 +18,9 @@ desktop summary "title:PCB"
 desktop click notepad "@button 'Save'"
 ```
 
+If the `desktop` utility is not installed, you can install it with `cargo install desktop-cli`.
+
+
 ## Core Philosophy: Signal over Noise
 
 This CLI is designed to **maximize signal-to-noise ratio** for LLM consumption:
