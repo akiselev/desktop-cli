@@ -1,3 +1,4 @@
+mod agent;
 mod automation;
 mod daemon;
 mod error;
@@ -16,6 +17,8 @@ use rpc::{DesktopServiceClient, ScreenshotRequest, ExecuteRequest, DetectRequest
 use rpc::{DumpTreeRequest, FindElementRequest, InvokePatternRequest};
 use rpc::{ListWindowsRequest, SetDefaultWindowRequest, GetDefaultWindowRequest};
 use rpc::{SummaryRequest, QueryRequest};
+use rpc::{ClickRequest, TypeTextRequest, SendKeysRequest, ScrollRequest};
+use rpc::{AgentRequest, AgentResponse};
 
 /// Desktop Daemon - Control desktop applications through visual grounding
 #[derive(Parser, Debug)]
@@ -88,34 +91,10 @@ enum Commands {
         port: u16,
     },
 
-    /// Call a service method on the running daemon
-    Call {
-        #[command(subcommand)]
-        method: CallMethod,
+    // =========================================================================
+    // Service Commands (flattened from 'call')
+    // =========================================================================
 
-        /// Daemon port
-        #[arg(long, default_value = "9870", global = true)]
-        port: u16,
-    },
-}
-
-#[derive(Subcommand, Debug)]
-enum WindowCommand {
-    /// List visible windows (with session filters applied)
-    List,
-
-    /// Set the default target window for subsequent commands
-    SetDefault {
-        /// Window index (1-based from list) or HWND
-        window: String,
-    },
-
-    /// Show the current default window
-    GetDefault,
-}
-
-#[derive(Subcommand, Debug)]
-enum CallMethod {
     /// Take a screenshot of a window
     Screenshot {
         /// Window handle (HWND) - uses default if not specified
@@ -125,6 +104,10 @@ enum CallMethod {
         /// Screenshot method (bitblt or printwindow)
         #[arg(long)]
         method: Option<String>,
+
+        /// Daemon port
+        #[arg(long, default_value = "9870")]
+        port: u16,
     },
 
     /// Execute natural language instructions on a window
@@ -140,6 +123,10 @@ enum CallMethod {
         /// Retry strategy (none, basic, advanced)
         #[arg(long)]
         retry_strategy: Option<String>,
+
+        /// Daemon port
+        #[arg(long, default_value = "9870")]
+        port: u16,
     },
 
     /// Detect UI elements using visual grounding
@@ -150,11 +137,11 @@ enum CallMethod {
 
         /// Natural language query
         query: String,
-    },
 
-    // =========================================================================
-    // UIA (UI Automation) Commands
-    // =========================================================================
+        /// Daemon port
+        #[arg(long, default_value = "9870")]
+        port: u16,
+    },
 
     /// Dump the UIA element tree for a window
     DumpTree {
@@ -177,6 +164,10 @@ enum CallMethod {
         /// Max list items per container (0 = unlimited)
         #[arg(long, default_value = "20")]
         max_list_items: u32,
+
+        /// Daemon port
+        #[arg(long, default_value = "9870")]
+        port: u16,
     },
 
     /// Find UI elements by CSS-style selector
@@ -195,6 +186,10 @@ enum CallMethod {
         /// Timeout in milliseconds
         #[arg(long, default_value = "3000")]
         timeout: u64,
+
+        /// Daemon port
+        #[arg(long, default_value = "9870")]
+        port: u16,
     },
 
     /// Invoke a UIA pattern operation on an element
@@ -213,6 +208,10 @@ enum CallMethod {
         /// Value for set operations
         #[arg(long)]
         value: Option<String>,
+
+        /// Daemon port
+        #[arg(long, default_value = "9870")]
+        port: u16,
     },
 
     // =========================================================================
@@ -251,6 +250,10 @@ enum CallMethod {
         /// Filter by roles (comma-separated: button,input,menu)
         #[arg(long)]
         roles: Option<String>,
+
+        /// Daemon port
+        #[arg(long, default_value = "9870")]
+        port: u16,
     },
 
     /// Query elements using enhanced LLM-friendly syntax
@@ -281,6 +284,10 @@ enum CallMethod {
         /// Timeout in milliseconds
         #[arg(long, default_value = "3000")]
         timeout: u64,
+
+        /// Daemon port
+        #[arg(long, default_value = "9870")]
+        port: u16,
     },
 
     /// Perform an action on an element and return UI summary
@@ -301,8 +308,164 @@ enum CallMethod {
         /// Value for type/set operations
         #[arg(long)]
         value: Option<String>,
+
+        /// Daemon port
+        #[arg(long, default_value = "9870")]
+        port: u16,
+    },
+
+    // =========================================================================
+    // Input Action Commands
+    // =========================================================================
+
+    /// Click at coordinates or on an element
+    ///
+    /// Examples:
+    ///   click --coords 100,200              # Left click at coordinates
+    ///   click --selector "*[name='Save']"   # Click on element
+    ///   click --type double --selector ...  # Double-click
+    ///   click --type right --coords 100,200 # Right-click
+    Click {
+        /// Window handle (HWND) - uses default if not specified
+        #[arg(long)]
+        hwnd: Option<String>,
+
+        /// Click type: left (default), right, double
+        #[arg(long, short = 't', default_value = "left")]
+        r#type: String,
+
+        /// Click at coordinates: x,y (window-relative)
+        #[arg(long, short = 'c')]
+        coords: Option<String>,
+
+        /// Click on element matching selector
+        #[arg(long, short = 's')]
+        selector: Option<String>,
+
+        /// Daemon port
+        #[arg(long, default_value = "9870")]
+        port: u16,
+    },
+
+    /// Type text (optionally into a specific element)
+    ///
+    /// Examples:
+    ///   type "Hello World"                      # Type at current focus
+    ///   type "Hello" --selector "*[name='Input']" # Focus element first
+    Type {
+        /// Window handle (HWND) - uses default if not specified
+        #[arg(long)]
+        hwnd: Option<String>,
+
+        /// Text to type
+        text: String,
+
+        /// Focus this element first (selector)
+        #[arg(long, short = 's')]
+        selector: Option<String>,
+
+        /// Daemon port
+        #[arg(long, default_value = "9870")]
+        port: u16,
+    },
+
+    /// Send key combination
+    ///
+    /// Examples:
+    ///   keys "enter"           # Press Enter
+    ///   keys "ctrl+c"          # Copy
+    ///   keys "alt+f4"          # Close window
+    ///   keys "ctrl+shift+s"    # Save As
+    Keys {
+        /// Window handle (HWND) - uses default if not specified
+        #[arg(long)]
+        hwnd: Option<String>,
+
+        /// Key combination (e.g., "ctrl+c", "alt+f4", "enter")
+        keys: String,
+
+        /// Daemon port
+        #[arg(long, default_value = "9870")]
+        port: u16,
+    },
+
+    /// Scroll up or down
+    ///
+    /// Examples:
+    ///   scroll up              # Scroll up 3 notches
+    ///   scroll down --amount 5 # Scroll down 5 notches
+    Scroll {
+        /// Window handle (HWND) - uses default if not specified
+        #[arg(long)]
+        hwnd: Option<String>,
+
+        /// Direction: up or down
+        direction: String,
+
+        /// Number of scroll notches (default: 3)
+        #[arg(long, short = 'n', default_value = "3")]
+        amount: i32,
+
+        /// Daemon port
+        #[arg(long, default_value = "9870")]
+        port: u16,
+    },
+
+    // =========================================================================
+    // Agent Command (LLM-driven automation)
+    // =========================================================================
+
+    /// Run an AI agent to accomplish a goal using natural language
+    ///
+    /// The agent analyzes the screen and UI state, plans actions, and executes
+    /// them step by step until the goal is achieved or it determines failure.
+    ///
+    /// Examples:
+    ///   agent "Open the File menu and click Save"
+    ///   agent "Fill in the username field with 'admin' and click Login"
+    ///   agent "Find the search box and search for 'test'"
+    ///   agent --max-steps 30 "Navigate to Settings and enable dark mode"
+    Agent {
+        /// Window handle (HWND) - uses default if not specified
+        #[arg(long)]
+        hwnd: Option<String>,
+
+        /// Natural language goal/instructions
+        goal: String,
+
+        /// Maximum steps before giving up (default: 20)
+        #[arg(long, default_value = "20")]
+        max_steps: usize,
+
+        /// Disable screenshot context (faster but less accurate)
+        #[arg(long)]
+        no_screenshot: bool,
+
+        /// Disable UI tree context (faster but less accurate)
+        #[arg(long)]
+        no_ui_tree: bool,
+
+        /// Daemon port
+        #[arg(long, default_value = "9870")]
+        port: u16,
     },
 }
+
+#[derive(Subcommand, Debug)]
+enum WindowCommand {
+    /// List visible windows (with session filters applied)
+    List,
+
+    /// Set the default target window for subsequent commands
+    SetDefault {
+        /// Window index (1-based from list) or HWND
+        window: String,
+    },
+
+    /// Show the current default window
+    GetDefault,
+}
+
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -335,8 +498,269 @@ async fn main() -> anyhow::Result<()> {
         Commands::Window { cmd, port } => {
             cmd_window(cmd, port).await?;
         }
-        Commands::Call { method, port } => {
-            cmd_call(method, port).await?;
+
+        // Service commands (flattened)
+        Commands::Screenshot { hwnd, method, port } => {
+            let mut client = connect_to_daemon(port).await?;
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
+            let result = client.take_screenshot(ScreenshotRequest {
+                hwnd,
+                method,
+            }).await?;
+            println!("{{\"width\": {}, \"height\": {}, \"format\": \"{}\", \"base64_length\": {}}}",
+                result.width, result.height, result.format, result.base64_image.len());
+        }
+        Commands::Execute { hwnd, instructions, retry_strategy, port } => {
+            let mut client = connect_to_daemon(port).await?;
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
+            let result = client.execute_instructions(ExecuteRequest {
+                hwnd,
+                instructions,
+                retry_strategy,
+            }).await?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+        Commands::Detect { hwnd, query, port } => {
+            let mut client = connect_to_daemon(port).await?;
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
+            let result = client.detect_elements(DetectRequest {
+                hwnd,
+                query,
+            }).await?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+        Commands::DumpTree { hwnd, depth, prune_offscreen, prune_empty, max_list_items, port } => {
+            let mut client = connect_to_daemon(port).await?;
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
+            let result = client.dump_tree(DumpTreeRequest {
+                hwnd,
+                max_depth: Some(depth),
+                prune_offscreen: Some(prune_offscreen),
+                prune_empty: Some(prune_empty),
+                max_list_items: Some(max_list_items),
+            }).await?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+        Commands::FindElement { hwnd, selector, all, timeout, port } => {
+            let mut client = connect_to_daemon(port).await?;
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
+            let result = client.find_elements(FindElementRequest {
+                hwnd,
+                selector,
+                find_all: Some(all),
+                timeout_ms: Some(timeout),
+            }).await?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+        Commands::Invoke { hwnd, selector, pattern, value, port } => {
+            let mut client = connect_to_daemon(port).await?;
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
+            let result = client.invoke_pattern(InvokePatternRequest {
+                hwnd,
+                selector,
+                pattern,
+                value,
+            }).await?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+
+        // LLM-Optimized Commands
+        Commands::Summary { hwnd, format, bounds, paths, region, depth, roles, port } => {
+            let mut client = connect_to_daemon(port).await?;
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
+
+            // Parse region if provided
+            let focus_region = region.as_ref().map(|r| {
+                let parts: Vec<i32> = r.split(',')
+                    .filter_map(|s| s.trim().parse().ok())
+                    .collect();
+                if parts.len() == 4 {
+                    Some([parts[0], parts[1], parts[2], parts[3]])
+                } else {
+                    None
+                }
+            }).flatten();
+
+            // Parse roles if provided
+            let roles_vec = roles.map(|r| {
+                r.split(',').map(|s| s.trim().to_string()).collect()
+            });
+
+            let result = client.get_summary(SummaryRequest {
+                hwnd,
+                format: Some(format),
+                include_bounds: Some(bounds),
+                include_paths: Some(paths),
+                focus_region,
+                max_depth: Some(depth),
+                roles: roles_vec,
+            }).await?;
+
+            // Output is already formatted by the server based on format option
+            println!("{}", result);
+        }
+
+        Commands::Query { hwnd, query, all, format, timeout, port } => {
+            let mut client = connect_to_daemon(port).await?;
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
+            let result = client.query_elements(QueryRequest {
+                hwnd,
+                query,
+                all: Some(all),
+                timeout_ms: Some(timeout),
+                format: Some(format),
+            }).await?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+
+        Commands::Do { hwnd, action, target, value, port } => {
+            let mut client = connect_to_daemon(port).await?;
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
+
+            // Map action to pattern
+            let pattern = match action.to_lowercase().as_str() {
+                "click" => "invoke",
+                "type" | "input" | "set" => "set-value",
+                "toggle" | "check" | "uncheck" => "toggle",
+                "expand" | "open" => "expand",
+                "collapse" | "close" => "collapse",
+                "select" | "choose" => "select",
+                "get" | "read" => "get-value",
+                _ => &action,
+            };
+
+            // Invoke the pattern
+            let result = client.invoke_pattern(InvokePatternRequest {
+                hwnd: hwnd.clone(),
+                selector: target,
+                pattern: pattern.to_string(),
+                value,
+            }).await?;
+
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+
+        // Input Action Commands
+        Commands::Click { hwnd, r#type, coords, selector, port } => {
+            let mut client = connect_to_daemon(port).await?;
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
+
+            // Parse coordinates if provided
+            let coords = coords.map(|c| {
+                let parts: Vec<i32> = c.split(',')
+                    .filter_map(|s| s.trim().parse().ok())
+                    .collect();
+                if parts.len() == 2 {
+                    Some((parts[0], parts[1]))
+                } else {
+                    None
+                }
+            }).flatten();
+
+            let result = client.click(ClickRequest {
+                hwnd,
+                click_type: r#type,
+                coords,
+                selector,
+            }).await?;
+
+            if result.success {
+                println!("Click successful");
+            } else {
+                eprintln!("Click failed: {}", result.error.unwrap_or_default());
+                std::process::exit(1);
+            }
+        }
+
+        Commands::Type { hwnd, text, selector, port } => {
+            let mut client = connect_to_daemon(port).await?;
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
+
+            let result = client.type_text(TypeTextRequest {
+                hwnd,
+                text,
+                selector,
+            }).await?;
+
+            if result.success {
+                println!("Text typed successfully");
+            } else {
+                eprintln!("Type failed: {}", result.error.unwrap_or_default());
+                std::process::exit(1);
+            }
+        }
+
+        Commands::Keys { hwnd, keys, port } => {
+            let mut client = connect_to_daemon(port).await?;
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
+
+            let result = client.send_keys(SendKeysRequest {
+                hwnd,
+                keys,
+            }).await?;
+
+            if result.success {
+                println!("Keys sent successfully");
+            } else {
+                eprintln!("Send keys failed: {}", result.error.unwrap_or_default());
+                std::process::exit(1);
+            }
+        }
+
+        Commands::Scroll { hwnd, direction, amount, port } => {
+            let mut client = connect_to_daemon(port).await?;
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
+
+            let result = client.scroll(ScrollRequest {
+                hwnd,
+                direction,
+                amount,
+                coords: None,
+            }).await?;
+
+            if result.success {
+                println!("Scroll successful");
+            } else {
+                eprintln!("Scroll failed: {}", result.error.unwrap_or_default());
+                std::process::exit(1);
+            }
+        }
+
+        // Agent Command
+        Commands::Agent { hwnd, goal, max_steps, no_screenshot, no_ui_tree, port } => {
+            let mut client = connect_to_daemon(port).await?;
+            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
+
+            println!("Starting agent with goal: {}", goal);
+            println!("Max steps: {}, Screenshot: {}, UI Tree: {}",
+                max_steps, !no_screenshot, !no_ui_tree);
+            println!("---");
+
+            let result = client.run_agent(AgentRequest {
+                hwnd,
+                goal,
+                max_steps,
+                include_screenshot: !no_screenshot,
+                include_ui_summary: !no_ui_tree,
+            }).await?;
+
+            // Print each step as it happened
+            for step in &result.history {
+                let status = if step.success { "✓" } else { "✗" };
+                println!("[Step {}] {} {}: {}", step.step, status, step.action, step.action_details);
+                println!("  Reasoning: {}", step.reasoning);
+                if let Some(ref err) = step.error {
+                    println!("  Error: {}", err);
+                }
+            }
+
+            println!("---");
+            println!("Status: {} ({} steps)", result.status, result.steps_taken);
+            println!("Summary: {}", result.summary);
+
+            if !result.success {
+                std::process::exit(1);
+            }
         }
     }
 
@@ -514,149 +938,6 @@ async fn resolve_hwnd(client: &mut DesktopServiceClient, hwnd: Option<String>) -
         let result = client.get_default_window(GetDefaultWindowRequest::default()).await?;
         result.hwnd.ok_or_else(|| anyhow::anyhow!("No window specified and no default window set. Use 'desktop window set-default <window>' first."))
     }
-}
-
-async fn cmd_call(method: CallMethod, port: u16) -> anyhow::Result<()> {
-    let mut client = connect_to_daemon(port).await?;
-    
-    // Call the requested method
-    match method {
-        CallMethod::Screenshot { hwnd, method } => {
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
-            let result = client.take_screenshot(ScreenshotRequest {
-                hwnd,
-                method,
-            }).await?;
-            // Print metadata, not the full base64
-            println!("{{\"width\": {}, \"height\": {}, \"format\": \"{}\", \"base64_length\": {}}}", 
-                result.width, result.height, result.format, result.base64_image.len());
-        }
-        CallMethod::Execute { hwnd, instructions, retry_strategy } => {
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
-            let result = client.execute_instructions(ExecuteRequest {
-                hwnd,
-                instructions,
-                retry_strategy,
-            }).await?;
-            println!("{}", serde_json::to_string_pretty(&result)?);
-        }
-        CallMethod::Detect { hwnd, query } => {
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
-            let result = client.detect_elements(DetectRequest {
-                hwnd,
-                query,
-            }).await?;
-            println!("{}", serde_json::to_string_pretty(&result)?);
-        }
-        
-        // UIA Commands
-        CallMethod::DumpTree { hwnd, depth, prune_offscreen, prune_empty, max_list_items } => {
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
-            let result = client.dump_tree(DumpTreeRequest {
-                hwnd,
-                max_depth: Some(depth),
-                prune_offscreen: Some(prune_offscreen),
-                prune_empty: Some(prune_empty),
-                max_list_items: Some(max_list_items),
-            }).await?;
-            println!("{}", serde_json::to_string_pretty(&result)?);
-        }
-        CallMethod::FindElement { hwnd, selector, all, timeout } => {
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
-            let result = client.find_elements(FindElementRequest {
-                hwnd,
-                selector,
-                find_all: Some(all),
-                timeout_ms: Some(timeout),
-            }).await?;
-            println!("{}", serde_json::to_string_pretty(&result)?);
-        }
-        CallMethod::Invoke { hwnd, selector, pattern, value } => {
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
-            let result = client.invoke_pattern(InvokePatternRequest {
-                hwnd,
-                selector,
-                pattern,
-                value,
-            }).await?;
-            println!("{}", serde_json::to_string_pretty(&result)?);
-        }
-
-        // LLM-Optimized Commands
-        CallMethod::Summary { hwnd, format, bounds, paths, region, depth, roles } => {
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
-
-            // Parse region if provided
-            let focus_region = region.as_ref().map(|r| {
-                let parts: Vec<i32> = r.split(',')
-                    .filter_map(|s| s.trim().parse().ok())
-                    .collect();
-                if parts.len() == 4 {
-                    Some([parts[0], parts[1], parts[2], parts[3]])
-                } else {
-                    None
-                }
-            }).flatten();
-
-            // Parse roles if provided
-            let roles_vec = roles.map(|r| {
-                r.split(',').map(|s| s.trim().to_string()).collect()
-            });
-
-            let result = client.get_summary(SummaryRequest {
-                hwnd,
-                format: Some(format),
-                include_bounds: Some(bounds),
-                include_paths: Some(paths),
-                focus_region,
-                max_depth: Some(depth),
-                roles: roles_vec,
-            }).await?;
-
-            // Output is already formatted by the server based on format option
-            println!("{}", result);
-        }
-
-        CallMethod::Query { hwnd, query, all, format, timeout } => {
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
-            let result = client.query_elements(QueryRequest {
-                hwnd,
-                query,
-                all: Some(all),
-                timeout_ms: Some(timeout),
-                format: Some(format),
-            }).await?;
-            println!("{}", serde_json::to_string_pretty(&result)?);
-        }
-
-        CallMethod::Do { hwnd, action, target, value } => {
-            let hwnd = resolve_hwnd(&mut client, hwnd).await?;
-
-            // Map action to pattern
-            let pattern = match action.to_lowercase().as_str() {
-                "click" => "invoke",
-                "type" | "input" | "set" => "set-value",
-                "toggle" | "check" | "uncheck" => "toggle",
-                "expand" | "open" => "expand",
-                "collapse" | "close" => "collapse",
-                "select" | "choose" => "select",
-                "get" | "read" => "get-value",
-                _ => &action,
-            };
-
-            // First invoke the pattern
-            let result = client.invoke_pattern(InvokePatternRequest {
-                hwnd: hwnd.clone(),
-                selector: target,
-                pattern: pattern.to_string(),
-                value,
-            }).await?;
-
-            println!("{}", serde_json::to_string_pretty(&result)?);
-        }
-    }
-
-    Ok(())
 }
 
 fn setup_console_logging() {

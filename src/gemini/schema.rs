@@ -122,6 +122,21 @@ pub fn element_detection_schema() -> Value {
             },
             "action_params": {
                 "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "Text to type for 'type' actions"
+                    },
+                    "scroll_amount": {
+                        "type": "number",
+                        "description": "Amount to scroll for 'scroll' actions"
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["up", "down", "left", "right"],
+                        "description": "Direction for scroll or drag actions"
+                    }
+                },
                 "description": "Additional parameters for the action (e.g., text to type, scroll amount)"
             },
             "confidence": {

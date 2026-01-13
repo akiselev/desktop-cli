@@ -1,5 +1,6 @@
 // Library exports for testing and external use
 
+pub mod agent;
 pub mod automation;
 pub mod error;
 pub mod executor;

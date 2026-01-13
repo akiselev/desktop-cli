@@ -402,3 +402,122 @@ pub struct QueryResult {
     pub suggestions: Vec<String>,
 }
 
+// ============================================================================
+// Input Action Types
+// ============================================================================
+
+/// Request to click at coordinates or on an element
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClickRequest {
+    pub hwnd: String,
+    /// Click type: "left", "right", "double"
+    #[serde(default = "default_click_type")]
+    pub click_type: String,
+    /// Click at these window-relative coordinates (x, y)
+    pub coords: Option<(i32, i32)>,
+    /// Or click on element matching this selector
+    pub selector: Option<String>,
+}
+
+fn default_click_type() -> String {
+    "left".to_string()
+}
+
+/// Request to type text
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TypeTextRequest {
+    pub hwnd: String,
+    /// Text to type
+    pub text: String,
+    /// Optional: selector to focus first
+    pub selector: Option<String>,
+}
+
+/// Request to send key combination
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SendKeysRequest {
+    pub hwnd: String,
+    /// Key combination like "ctrl+c", "alt+f4", "enter", "tab"
+    pub keys: String,
+}
+
+/// Request to scroll
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScrollRequest {
+    pub hwnd: String,
+    /// Scroll direction: "up", "down"
+    pub direction: String,
+    /// Number of scroll notches (default: 3)
+    #[serde(default = "default_scroll_amount")]
+    pub amount: i32,
+    /// Optional: scroll at these coordinates
+    pub coords: Option<(i32, i32)>,
+}
+
+fn default_scroll_amount() -> i32 {
+    3
+}
+
+/// Generic action result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActionResult {
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+// ============================================================================
+// Agent Types (LLM-driven automation)
+// ============================================================================
+
+/// Request to run the automation agent
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentRequest {
+    pub hwnd: String,
+    /// Natural language goal/instructions
+    pub goal: String,
+    /// Maximum steps before giving up (default: 20)
+    #[serde(default = "default_max_steps")]
+    pub max_steps: usize,
+    /// Include screenshot in LLM context (default: true)
+    #[serde(default = "default_true")]
+    pub include_screenshot: bool,
+    /// Include UI tree summary in LLM context (default: true)
+    #[serde(default = "default_true")]
+    pub include_ui_summary: bool,
+}
+
+fn default_max_steps() -> usize {
+    20
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// A step taken by the agent
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentStepInfo {
+    pub step: usize,
+    pub reasoning: String,
+    pub action: String,
+    pub action_details: String,
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Result of agent execution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentResponse {
+    /// Whether the goal was achieved
+    pub success: bool,
+    /// Summary of what happened
+    pub summary: String,
+    /// Number of steps taken
+    pub steps_taken: usize,
+    /// Final status: "done", "failed", "max_steps", "error"
+    pub status: String,
+    /// History of all steps
+    pub history: Vec<AgentStepInfo>,
+}
+

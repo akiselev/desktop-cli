@@ -133,7 +133,7 @@ async fn execute_with_advanced_retry(
 
     loop {
         // Build instruction with context hint if we're retrying
-        let enhanced_instruction = if attempt > 0 && attempt <= context_hints.len() as u32 {
+        let enhanced_instruction = if attempt > 0 && attempt < context_hints.len() as u32 {
             format!("{} {}", instruction, context_hints[attempt as usize])
         } else {
             instruction.to_string()

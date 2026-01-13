@@ -7,7 +7,7 @@ use uiautomation::patterns::{
     UIScrollPattern, UISelectionItemPattern, UISelectionPattern, UITablePattern,
     UITextPattern, UITogglePattern, UITransformPattern, UIValuePattern, UIWindowPattern,
 };
-use uiautomation::types::{Handle, TreeScope};
+use uiautomation::types::Handle;
 use uiautomation::{UIAutomation, UIElement, UITreeWalker};
 
 /// Convert a UIElement to our serializable UiaElement
@@ -247,11 +247,8 @@ fn find_by_segment(
     seg: &SelectorSegment,
     timeout_ms: u64,
 ) -> Result<Vec<UIElement>, uiautomation::Error> {
-    let scope = if seg.is_direct_child {
-        TreeScope::Children
-    } else {
-        TreeScope::Descendants
-    };
+    // Note: seg.is_direct_child would use TreeScope::Children vs Descendants
+    // but UIMatcher doesn't support scope configuration directly - it uses depth instead
 
     // Build condition based on segment
     let mut matcher = uiautomation::UIMatcher::new(automation.clone());
@@ -261,6 +258,9 @@ fn find_by_segment(
     } else {
         matcher = matcher.timeout(0); // Don't retry
     }
+
+    // Use depth of 20 to search deeper in the tree (default is 7)
+    matcher = matcher.depth(20);
 
     matcher = matcher.from(root.clone());
 
