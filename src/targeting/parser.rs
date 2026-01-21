@@ -8,6 +8,7 @@ use std::fmt;
 #[derive(Debug, Clone)]
 pub enum ParseError {
     /// Unknown prefix type (e.g., "foo:bar" where "foo" isn't recognized)
+    #[allow(dead_code)]
     UnknownFilterType(String),
     /// Invalid index format
     InvalidIndex(String),
@@ -38,7 +39,8 @@ impl std::error::Error for ParseError {}
 pub enum IndexSpec {
     /// Numeric index (1-based)
     Number(usize),
-    /// First window
+    /// First window (reserved - currently :first parses to Number(1))
+    #[allow(dead_code)]
     First,
     /// Last window
     Last,
@@ -177,6 +179,7 @@ impl WindowQuery {
     }
 
     /// Check if this query is empty (no filters set)
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.index.is_none()
             && self.exe.is_none()
@@ -277,8 +280,15 @@ mod tests {
 
     #[test]
     fn test_parse_title() {
+        // Without wildcards, title filter does exact match (case-insensitive)
         let q = WindowQuery::parse("title:PCB").unwrap();
         assert!(q.title.is_some());
+        assert!(q.title.as_ref().unwrap().matches("PCB"));
+        assert!(q.title.as_ref().unwrap().matches("pcb"));
+        assert!(!q.title.as_ref().unwrap().matches("My PCB Design"));
+
+        // Use wildcards for contains matching
+        let q = WindowQuery::parse("title:*PCB*").unwrap();
         assert!(q.title.as_ref().unwrap().matches("My PCB Design"));
 
         let q = WindowQuery::parse("title:*Draft*").unwrap();

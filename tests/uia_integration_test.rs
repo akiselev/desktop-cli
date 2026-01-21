@@ -1,3 +1,9 @@
+//! Integration tests for Windows UI Automation
+//!
+//! These tests require a Windows environment with a desktop session.
+
+#![cfg(windows)]
+
 use desktop_cli::automation::windows::uia::tree::{dump_tree, element_from_hwnd, element_to_uia};
 use desktop_cli::automation::windows::window::list_windows;
 use desktop_cli::rpc::types::TreeDumpOptions;

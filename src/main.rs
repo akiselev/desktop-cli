@@ -1,8 +1,5 @@
-mod agent;
 mod automation;
 mod error;
-mod executor;
-mod gemini;
 mod ops;
 mod rpc;
 mod targeting;

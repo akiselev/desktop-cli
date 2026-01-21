@@ -51,12 +51,6 @@ pub fn list_windows(
     list_windows_raw(exe_filter, title_filter).map_err(|e| OpsError(e.to_string()))
 }
 
-/// Get info for a specific window by HWND string
-pub fn get_window_by_hwnd(hwnd_str: &str) -> Result<WindowInfo> {
-    let hwnd = parse_hwnd(hwnd_str).map_err(|e| OpsError(e.to_string()))?;
-    get_window_info(hwnd).map_err(|e| OpsError(e.to_string()))
-}
-
 /// Parse HWND string to native handle
 pub fn parse_hwnd_string(hwnd_str: &str) -> Result<HWND> {
     parse_hwnd(hwnd_str).map_err(|e| OpsError(e.to_string()))

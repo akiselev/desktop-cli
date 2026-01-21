@@ -24,10 +24,6 @@ pub fn list_windows(_: Option<&str>, _: Option<&str>) -> Result<Vec<WindowInfo>>
     not_supported()
 }
 
-pub fn get_window_by_hwnd(_: &str) -> Result<WindowInfo> {
-    not_supported()
-}
-
 pub fn take_screenshot(_: &str, _: Option<&str>) -> Result<Screenshot> {
     not_supported()
 }

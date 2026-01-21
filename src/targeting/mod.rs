@@ -11,10 +11,9 @@ mod parser;
 mod resolver;
 mod suggest;
 
-pub use parser::{IndexSpec, ParseError, WildcardPattern, WindowQuery};
-pub use resolver::{resolve_window, resolve_with_element, ResolutionError, ResolutionResult};
+pub use parser::WindowQuery;
+pub use resolver::{resolve_window, resolve_with_element, ResolutionError};
 pub use suggest::{
-    format_suggestions, format_window_list, format_window_list_json, suggest_queries,
-    WindowQuerySuggestions,
+    format_suggestions, format_window_list, format_window_list_json,
 };
 

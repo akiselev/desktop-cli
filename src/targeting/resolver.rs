@@ -24,18 +24,22 @@ pub enum ResolutionError {
         windows: Vec<WindowInfo>,
     },
     /// Multiple windows had the element (used with element disambiguation)
+    #[allow(dead_code)]
     AmbiguousElement {
         selector: String,
         windows: Vec<WindowInfo>,
     },
     /// No windows had the element
+    #[allow(dead_code)]
     NoElementMatch {
         selector: String,
         windows: Vec<WindowInfo>,
     },
     /// Invalid HWND format
+    #[allow(dead_code)]
     InvalidHwnd(String),
     /// Window with HWND not found
+    #[allow(dead_code)]
     HwndNotFound(String),
 }
 
@@ -102,17 +106,6 @@ impl fmt::Display for ResolutionError {
 }
 
 impl std::error::Error for ResolutionError {}
-
-/// Result of resolving a window query
-#[derive(Debug)]
-pub enum ResolutionResult {
-    /// Exactly one window matched
-    Single(WindowInfo),
-    /// Multiple windows matched
-    Multiple(Vec<WindowInfo>),
-    /// No windows matched
-    None,
-}
 
 /// Filter windows based on a query
 pub fn filter_windows(query: &WindowQuery, windows: &[WindowInfo]) -> Vec<WindowInfo> {
@@ -316,6 +309,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::automation::types::WindowRect;
 
     fn make_windows() -> Vec<WindowInfo> {
         vec![
@@ -323,6 +317,7 @@ mod tests {
                 hwnd: "0x1234".to_string(),
                 title: "Altium Designer - PCB1.PcbDoc".to_string(),
                 executable: "Altium.exe".to_string(),
+                rect: WindowRect { x: 0, y: 0, width: 800, height: 600 },
                 pid: 1000,
                 class_name: Some("TfrmAltium".to_string()),
             },
@@ -330,6 +325,7 @@ mod tests {
                 hwnd: "0x5678".to_string(),
                 title: "Altium Designer - Schematic1.SchDoc".to_string(),
                 executable: "Altium.exe".to_string(),
+                rect: WindowRect { x: 0, y: 0, width: 800, height: 600 },
                 pid: 1000,
                 class_name: Some("TfrmAltium".to_string()),
             },
@@ -337,6 +333,7 @@ mod tests {
                 hwnd: "0x9ABC".to_string(),
                 title: "Untitled - Notepad".to_string(),
                 executable: "notepad.exe".to_string(),
+                rect: WindowRect { x: 0, y: 0, width: 800, height: 600 },
                 pid: 2000,
                 class_name: Some("Notepad".to_string()),
             },
@@ -378,7 +375,8 @@ mod tests {
     fn test_resolve_by_title() {
         let windows = make_windows();
 
-        let query = WindowQuery::parse("title:PCB").unwrap();
+        // Use wildcard for contains matching
+        let query = WindowQuery::parse("title:*PCB*").unwrap();
         let result = resolve_window(&query, &windows).unwrap();
         assert!(result.title.contains("PCB"));
     }
