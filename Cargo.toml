@@ -3,15 +3,15 @@ name = "desktop-cli"
 version = "0.1.0"
 edition = "2021"
 
-description = "Desktop automation CLI with UI Automation (UIA) support for Windows. Query UI element trees, find elements with CSS-style selectors, and interact via accessibility patterns."
+description = "Cross-platform desktop automation CLI with accessibility API support for Windows, Linux, and macOS. Query UI element trees, find elements with CSS-style selectors, and interact via accessibility patterns."
 license = "GPL-3.0-only"
 repository = "https://github.com/akiselev/desktop-cli"
 homepage = "https://github.com/akiselev/desktop-cli"
 documentation = "https://docs.rs/desktop-cli"
 readme = "README.md"
 authors = ["Alexander Kiselev <alex@akiselev.com>"]
-keywords = ["automation", "accessibility", "windows", "uiautomation", "rpc", "llm"]
-categories = ["command-line-utilities", "accessibility", "api-bindings", "os::windows-apis"]
+keywords = ["automation", "accessibility", "cross-platform", "uiautomation", "atspi", "llm"]
+categories = ["command-line-utilities", "accessibility", "api-bindings"]
 
 [[bin]]
 name = "desktop"
@@ -45,8 +45,6 @@ directories = "5"
 dirs = "5"
 wildmatch = "2.6"
 
-# Unix-specific (currently none needed)
-
 # Windows Automation (Windows only)
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
@@ -59,3 +57,15 @@ windows = { version = "0.58", features = [
 ] }
 win-screenshot = "4"
 uiautomation = "0.24"
+
+# Linux Automation (Linux only)
+[target.'cfg(target_os = "linux")'.dependencies]
+x11 = { version = "2.21", features = ["xlib", "xtest"] }
+zbus = { version = "4", default-features = false, features = ["blocking"] }
+libc = "0.2"
+
+# macOS Automation (macOS only)
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+core-graphics = "0.24"
+libc = "0.2"
