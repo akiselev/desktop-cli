@@ -1,23 +1,18 @@
 //! Linux coordinate translation utilities
 
+use crate::automation::linux::window::X11Connection;
 use crate::error::{DesktopCliError, Result};
-use x11::xlib::{
-    Display, Window, XCloseDisplay, XGetWindowAttributes, XOpenDisplay, XTranslateCoordinates,
-    XWindowAttributes,
-};
+use x11::xlib::{Window, XGetWindowAttributes, XTranslateCoordinates, XWindowAttributes};
 
 /// Convert window-relative coordinates to screen coordinates
 pub fn window_to_screen_coords(window: Window, window_x: i32, window_y: i32) -> Result<(i32, i32)> {
-    unsafe {
-        let display = XOpenDisplay(std::ptr::null());
-        if display.is_null() {
-            return Err(DesktopCliError::CoordinateError(
-                "Failed to open X11 display".to_string(),
-            ));
-        }
+    let conn = X11Connection::new().map_err(|e| {
+        DesktopCliError::CoordinateError(format!("Failed to open X11 display: {}", e))
+    })?;
 
+    unsafe {
         // Get root window for translation
-        let root = x11::xlib::XDefaultRootWindow(display);
+        let root = conn.root_window();
 
         // Translate coordinates from window to root (screen) coordinates
         let mut screen_x: i32 = 0;
@@ -25,7 +20,7 @@ pub fn window_to_screen_coords(window: Window, window_x: i32, window_y: i32) -> 
         let mut child: Window = 0;
 
         let result = XTranslateCoordinates(
-            display,
+            conn.display(),
             window,
             root,
             window_x,
@@ -35,7 +30,7 @@ pub fn window_to_screen_coords(window: Window, window_x: i32, window_y: i32) -> 
             &mut child,
         );
 
-        XCloseDisplay(display);
+        // conn is dropped automatically, closing the display
 
         if result == 0 {
             return Err(DesktopCliError::CoordinateError(
@@ -49,25 +44,22 @@ pub fn window_to_screen_coords(window: Window, window_x: i32, window_y: i32) -> 
 
 /// Get window geometry (position and size)
 pub fn get_window_geometry(window: Window) -> Result<(i32, i32, u32, u32)> {
-    unsafe {
-        let display = XOpenDisplay(std::ptr::null());
-        if display.is_null() {
-            return Err(DesktopCliError::CoordinateError(
-                "Failed to open X11 display".to_string(),
-            ));
-        }
+    let conn = X11Connection::new().map_err(|e| {
+        DesktopCliError::CoordinateError(format!("Failed to open X11 display: {}", e))
+    })?;
 
+    unsafe {
         let mut attrs: XWindowAttributes = std::mem::zeroed();
-        let result = XGetWindowAttributes(display, window, &mut attrs);
+        let result = XGetWindowAttributes(conn.display(), window, &mut attrs);
 
         // Translate to get absolute screen position
-        let root = x11::xlib::XDefaultRootWindow(display);
+        let root = conn.root_window();
         let mut abs_x: i32 = 0;
         let mut abs_y: i32 = 0;
         let mut child: Window = 0;
 
         XTranslateCoordinates(
-            display,
+            conn.display(),
             window,
             root,
             0,
@@ -77,7 +69,7 @@ pub fn get_window_geometry(window: Window) -> Result<(i32, i32, u32, u32)> {
             &mut child,
         );
 
-        XCloseDisplay(display);
+        // conn is dropped automatically, closing the display
 
         if result == 0 {
             return Err(DesktopCliError::CoordinateError(
@@ -91,19 +83,16 @@ pub fn get_window_geometry(window: Window) -> Result<(i32, i32, u32, u32)> {
 
 /// Get screen dimensions
 pub fn get_screen_size() -> Result<(u32, u32)> {
+    let conn = X11Connection::new().map_err(|e| {
+        DesktopCliError::CoordinateError(format!("Failed to open X11 display: {}", e))
+    })?;
+
     unsafe {
-        let display = XOpenDisplay(std::ptr::null());
-        if display.is_null() {
-            return Err(DesktopCliError::CoordinateError(
-                "Failed to open X11 display".to_string(),
-            ));
-        }
+        let screen = x11::xlib::XDefaultScreen(conn.display());
+        let width = x11::xlib::XDisplayWidth(conn.display(), screen);
+        let height = x11::xlib::XDisplayHeight(conn.display(), screen);
 
-        let screen = x11::xlib::XDefaultScreen(display);
-        let width = x11::xlib::XDisplayWidth(display, screen);
-        let height = x11::xlib::XDisplayHeight(display, screen);
-
-        XCloseDisplay(display);
+        // conn is dropped automatically, closing the display
 
         if width <= 0 || height <= 0 {
             return Err(DesktopCliError::CoordinateError(

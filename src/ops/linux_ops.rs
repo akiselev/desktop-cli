@@ -11,8 +11,9 @@ use crate::automation::linux::{
     coordinates::calculate_center,
     get_window_info as get_x11_window_info,
     input::{
-        click_at_coords, double_click_at_coords, right_click_at_coords, scroll as input_scroll,
-        send_keys as input_send_keys, type_text as input_type_text,
+        click_at_coords, click_at_screen_coords, double_click_at_coords,
+        double_click_at_screen_coords, right_click_at_coords, right_click_at_screen_coords,
+        scroll as input_scroll, send_keys as input_send_keys, type_text as input_type_text,
     },
     list_windows as list_windows_raw, parse_window_id, ScreenshotMethod,
 };
@@ -508,10 +509,12 @@ pub fn click(
 ) -> Result<()> {
     let window = parse_window_id(window_str).map_err(|e| OpsError(e.to_string()))?;
 
-    let (x, y) = if let Some((cx, cy)) = coords {
-        (cx, cy)
+    // Determine if we're using screen coordinates (selector) or window-relative coords
+    let (x, y, is_screen_coords) = if let Some((cx, cy)) = coords {
+        // User-provided coords are window-relative
+        (cx, cy, false)
     } else if let Some(selector_str) = selector {
-        // Find element center
+        // Find element center - AT-SPI bounds are in screen coordinates
         let elements = find_elements(window_str, selector_str, false)?;
         if elements.is_empty() {
             return Err(OpsError(format!(
@@ -520,17 +523,29 @@ pub fn click(
             )));
         }
         let bounds = elements[0].bounds;
-        (bounds[0] + bounds[2] / 2, bounds[1] + bounds[3] / 2)
+        // bounds[0]=x, bounds[1]=y, bounds[2]=width, bounds[3]=height
+        // These are already in screen coordinates from AT-SPI GetExtents
+        (bounds[0] + bounds[2] / 2, bounds[1] + bounds[3] / 2, true)
     } else {
         return Err(OpsError(
             "Either coords or selector must be specified".to_string(),
         ));
     };
 
-    match click_type.to_lowercase().as_str() {
-        "right" => right_click_at_coords(window, x, y).map_err(|e| OpsError(e.to_string())),
-        "double" => double_click_at_coords(window, x, y).map_err(|e| OpsError(e.to_string())),
-        _ => click_at_coords(window, x, y).map_err(|e| OpsError(e.to_string())),
+    if is_screen_coords {
+        // Use screen coordinate functions (no window offset conversion)
+        match click_type.to_lowercase().as_str() {
+            "right" => right_click_at_screen_coords(x, y).map_err(|e| OpsError(e.to_string())),
+            "double" => double_click_at_screen_coords(x, y).map_err(|e| OpsError(e.to_string())),
+            _ => click_at_screen_coords(x, y).map_err(|e| OpsError(e.to_string())),
+        }
+    } else {
+        // Use window-relative functions (converts to screen coords internally)
+        match click_type.to_lowercase().as_str() {
+            "right" => right_click_at_coords(window, x, y).map_err(|e| OpsError(e.to_string())),
+            "double" => double_click_at_coords(window, x, y).map_err(|e| OpsError(e.to_string())),
+            _ => click_at_coords(window, x, y).map_err(|e| OpsError(e.to_string())),
+        }
     }
 }
 

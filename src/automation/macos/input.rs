@@ -53,6 +53,27 @@ pub fn click_at_coords(window: WindowId, window_x: i32, window_y: i32) -> Result
     // Convert window-relative to screen coordinates
     let (screen_x, screen_y) = window_to_screen_coords(window, window_x, window_y)?;
 
+    click_impl(screen_x, screen_y)?;
+    tracing::debug!(
+        "Clicked at window coords ({}, {}), screen coords ({}, {})",
+        window_x,
+        window_y,
+        screen_x,
+        screen_y
+    );
+
+    Ok(())
+}
+
+/// Click at absolute screen coordinates (no window offset conversion)
+/// Use this when coordinates are already in screen space (e.g., from AXUIElement position)
+pub fn click_at_screen_coords(screen_x: i32, screen_y: i32) -> Result<()> {
+    click_impl(screen_x, screen_y)?;
+    tracing::debug!("Clicked at screen coords ({}, {})", screen_x, screen_y);
+    Ok(())
+}
+
+fn click_impl(screen_x: i32, screen_y: i32) -> Result<()> {
     let source = create_event_source()?;
     let point = CGPoint::new(screen_x as f64, screen_y as f64);
 
@@ -90,14 +111,6 @@ pub fn click_at_coords(window: WindowId, window_x: i32, window_y: i32) -> Result
     .ok_or_else(|| DesktopCliError::AutomationError("Failed to create mouse up event".to_string()))?;
     post_event(&up_event)?;
 
-    tracing::debug!(
-        "Clicked at window coords ({}, {}), screen coords ({}, {})",
-        window_x,
-        window_y,
-        screen_x,
-        screen_y
-    );
-
     Ok(())
 }
 
@@ -105,6 +118,20 @@ pub fn click_at_coords(window: WindowId, window_x: i32, window_y: i32) -> Result
 pub fn double_click_at_coords(window: WindowId, window_x: i32, window_y: i32) -> Result<()> {
     let (screen_x, screen_y) = window_to_screen_coords(window, window_x, window_y)?;
 
+    double_click_impl(screen_x, screen_y)?;
+    tracing::debug!("Double-clicked at window coords ({}, {})", window_x, window_y);
+
+    Ok(())
+}
+
+/// Double-click at absolute screen coordinates
+pub fn double_click_at_screen_coords(screen_x: i32, screen_y: i32) -> Result<()> {
+    double_click_impl(screen_x, screen_y)?;
+    tracing::debug!("Double-clicked at screen coords ({}, {})", screen_x, screen_y);
+    Ok(())
+}
+
+fn double_click_impl(screen_x: i32, screen_y: i32) -> Result<()> {
     let source = create_event_source()?;
     let point = CGPoint::new(screen_x as f64, screen_y as f64);
 
@@ -152,8 +179,6 @@ pub fn double_click_at_coords(window: WindowId, window_x: i32, window_y: i32) ->
     up2.set_integer_value_field(EventField::MOUSE_EVENT_CLICK_STATE, 2);
     post_event(&up2)?;
 
-    tracing::debug!("Double-clicked at window coords ({}, {})", window_x, window_y);
-
     Ok(())
 }
 
@@ -161,6 +186,20 @@ pub fn double_click_at_coords(window: WindowId, window_x: i32, window_y: i32) ->
 pub fn right_click_at_coords(window: WindowId, window_x: i32, window_y: i32) -> Result<()> {
     let (screen_x, screen_y) = window_to_screen_coords(window, window_x, window_y)?;
 
+    right_click_impl(screen_x, screen_y)?;
+    tracing::debug!("Right-clicked at window coords ({}, {})", window_x, window_y);
+
+    Ok(())
+}
+
+/// Right-click at absolute screen coordinates
+pub fn right_click_at_screen_coords(screen_x: i32, screen_y: i32) -> Result<()> {
+    right_click_impl(screen_x, screen_y)?;
+    tracing::debug!("Right-clicked at screen coords ({}, {})", screen_x, screen_y);
+    Ok(())
+}
+
+fn right_click_impl(screen_x: i32, screen_y: i32) -> Result<()> {
     let source = create_event_source()?;
     let point = CGPoint::new(screen_x as f64, screen_y as f64);
 
@@ -197,8 +236,6 @@ pub fn right_click_at_coords(window: WindowId, window_x: i32, window_y: i32) -> 
     )
     .ok_or_else(|| DesktopCliError::AutomationError("Failed to create event".to_string()))?;
     post_event(&up_event)?;
-
-    tracing::debug!("Right-clicked at window coords ({}, {})", window_x, window_y);
 
     Ok(())
 }

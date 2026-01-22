@@ -117,11 +117,62 @@ fn capture_xgetimage(window: Window) -> Result<Screenshot> {
         let bytes_per_pixel = (img.bits_per_pixel / 8) as usize;
         let row_stride = img.bytes_per_line as usize;
 
-        let mut rgba_data = Vec::with_capacity((width * height * 4) as usize);
+        // Validate bytes_per_pixel is at least 3 (RGB)
+        if bytes_per_pixel < 3 {
+            XDestroyImage(image);
+            XCloseDisplay(display);
+            return Err(DesktopCliError::ScreenshotError(format!(
+                "Unsupported pixel format: {} bits per pixel",
+                img.bits_per_pixel
+            )));
+        }
+
+        // Calculate total data size and validate
+        let total_data_size = match row_stride.checked_mul(height as usize) {
+            Some(size) => size,
+            None => {
+                XDestroyImage(image);
+                XCloseDisplay(display);
+                return Err(DesktopCliError::ScreenshotError(
+                    "Image size overflow".to_string(),
+                ));
+            }
+        };
+
+        // Ensure we don't overflow when calculating required capacity
+        let rgba_size = match (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|v| v.checked_mul(4))
+        {
+            Some(size) => size,
+            None => {
+                XDestroyImage(image);
+                XCloseDisplay(display);
+                return Err(DesktopCliError::ScreenshotError(
+                    "RGBA buffer size overflow".to_string(),
+                ));
+            }
+        };
+
+        let mut rgba_data = Vec::with_capacity(rgba_size);
 
         for y in 0..height {
             for x in 0..width {
                 let offset = y as usize * row_stride + x as usize * bytes_per_pixel;
+
+                // Bounds check before accessing pixel data
+                let max_offset = if bytes_per_pixel == 4 {
+                    offset + 3
+                } else {
+                    offset + 2
+                };
+                if max_offset >= total_data_size {
+                    XDestroyImage(image);
+                    XCloseDisplay(display);
+                    return Err(DesktopCliError::ScreenshotError(
+                        "Image data buffer overflow detected".to_string(),
+                    ));
+                }
 
                 // X11 typically uses BGRA format
                 let b = *img.data.add(offset) as u8;

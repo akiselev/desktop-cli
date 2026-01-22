@@ -121,6 +121,28 @@ pub fn click_at_coords(window: Window, window_x: i32, window_y: i32) -> Result<(
     Ok(())
 }
 
+/// Click at absolute screen coordinates (no window offset conversion)
+/// Use this when coordinates are already in screen space (e.g., from AT-SPI GetExtents)
+pub fn click_at_screen_coords(screen_x: i32, screen_y: i32) -> Result<()> {
+    let conn = InputConnection::new()?;
+
+    // Move mouse to position
+    move_mouse(&conn, screen_x, screen_y)?;
+
+    // Small delay for position to register
+    sleep(Duration::from_millis(10));
+
+    // Click
+    button_event(&conn, BUTTON_LEFT, true)?;
+    sleep(Duration::from_millis(10));
+    button_event(&conn, BUTTON_LEFT, false)?;
+
+    conn.sync();
+    tracing::debug!("Clicked at screen coords ({}, {})", screen_x, screen_y);
+
+    Ok(())
+}
+
 /// Double-click at the specified window-relative coordinates
 pub fn double_click_at_coords(window: Window, window_x: i32, window_y: i32) -> Result<()> {
     let conn = InputConnection::new()?;
@@ -128,26 +150,39 @@ pub fn double_click_at_coords(window: Window, window_x: i32, window_y: i32) -> R
     // Convert window-relative to screen coordinates
     let (screen_x, screen_y) = window_to_screen_coords(window, window_x, window_y)?;
 
+    double_click_impl(&conn, screen_x, screen_y)?;
+    tracing::debug!("Double-clicked at window coords ({}, {})", window_x, window_y);
+
+    Ok(())
+}
+
+/// Double-click at absolute screen coordinates
+pub fn double_click_at_screen_coords(screen_x: i32, screen_y: i32) -> Result<()> {
+    let conn = InputConnection::new()?;
+    double_click_impl(&conn, screen_x, screen_y)?;
+    tracing::debug!("Double-clicked at screen coords ({}, {})", screen_x, screen_y);
+    Ok(())
+}
+
+fn double_click_impl(conn: &InputConnection, screen_x: i32, screen_y: i32) -> Result<()> {
     // Move mouse to position
-    move_mouse(&conn, screen_x, screen_y)?;
+    move_mouse(conn, screen_x, screen_y)?;
 
     // First click
     sleep(Duration::from_millis(10));
-    button_event(&conn, BUTTON_LEFT, true)?;
+    button_event(conn, BUTTON_LEFT, true)?;
     sleep(Duration::from_millis(10));
-    button_event(&conn, BUTTON_LEFT, false)?;
+    button_event(conn, BUTTON_LEFT, false)?;
 
     // Small delay between clicks
     sleep(Duration::from_millis(50));
 
     // Second click
-    button_event(&conn, BUTTON_LEFT, true)?;
+    button_event(conn, BUTTON_LEFT, true)?;
     sleep(Duration::from_millis(10));
-    button_event(&conn, BUTTON_LEFT, false)?;
+    button_event(conn, BUTTON_LEFT, false)?;
 
     conn.sync();
-    tracing::debug!("Double-clicked at window coords ({}, {})", window_x, window_y);
-
     Ok(())
 }
 
@@ -158,18 +193,31 @@ pub fn right_click_at_coords(window: Window, window_x: i32, window_y: i32) -> Re
     // Convert window-relative to screen coordinates
     let (screen_x, screen_y) = window_to_screen_coords(window, window_x, window_y)?;
 
+    right_click_impl(&conn, screen_x, screen_y)?;
+    tracing::debug!("Right-clicked at window coords ({}, {})", window_x, window_y);
+
+    Ok(())
+}
+
+/// Right-click at absolute screen coordinates
+pub fn right_click_at_screen_coords(screen_x: i32, screen_y: i32) -> Result<()> {
+    let conn = InputConnection::new()?;
+    right_click_impl(&conn, screen_x, screen_y)?;
+    tracing::debug!("Right-clicked at screen coords ({}, {})", screen_x, screen_y);
+    Ok(())
+}
+
+fn right_click_impl(conn: &InputConnection, screen_x: i32, screen_y: i32) -> Result<()> {
     // Move mouse to position
-    move_mouse(&conn, screen_x, screen_y)?;
+    move_mouse(conn, screen_x, screen_y)?;
 
     // Right click
     sleep(Duration::from_millis(10));
-    button_event(&conn, BUTTON_RIGHT, true)?;
+    button_event(conn, BUTTON_RIGHT, true)?;
     sleep(Duration::from_millis(10));
-    button_event(&conn, BUTTON_RIGHT, false)?;
+    button_event(conn, BUTTON_RIGHT, false)?;
 
     conn.sync();
-    tracing::debug!("Right-clicked at window coords ({}, {})", window_x, window_y);
-
     Ok(())
 }
 
