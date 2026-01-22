@@ -1,4 +1,12 @@
 //! Linux window enumeration and management via X11
+//!
+//! # Thread Safety
+//!
+//! X11 connections are NOT thread-safe. Each thread that needs to communicate
+//! with the X server must have its own connection (Display pointer). The
+//! `X11Connection` wrapper in this module is intentionally `!Send` and `!Sync`
+//! to prevent accidental sharing across threads. If you need multi-threaded
+//! access to X11, create separate connections in each thread.
 
 use crate::automation::types::{WindowInfo, WindowRect};
 use crate::error::{DesktopCliError, Result};
@@ -49,6 +57,34 @@ impl Drop for X11Connection {
 }
 
 // Note: X11Connection is automatically !Send and !Sync because *mut Display is !Send and !Sync
+// This is intentional as X11 connections are not thread-safe and must be used from a single thread.
+
+/// RAII wrapper for XQueryTree children array to ensure XFree is called even on panic
+struct ChildrenGuard {
+    ptr: *mut Window,
+}
+
+impl ChildrenGuard {
+    fn new(ptr: *mut Window) -> Self {
+        Self { ptr }
+    }
+
+    fn as_slice(&self, len: usize) -> &[Window] {
+        if self.ptr.is_null() || len == 0 {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(self.ptr, len) }
+        }
+    }
+}
+
+impl Drop for ChildrenGuard {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() {
+            unsafe { XFree(self.ptr as *mut _) };
+        }
+    }
+}
 
 /// Get the parent process ID for a given process
 fn get_parent_pid(pid: u32) -> Option<u32> {
@@ -262,6 +298,9 @@ fn is_window_visible(display: *mut Display, window: Window) -> bool {
 }
 
 /// Recursively find all windows
+///
+/// Uses RAII pattern (ChildrenGuard) to ensure XFree is called even if a panic occurs
+/// during recursion or other operations.
 fn find_all_windows(display: *mut Display, window: Window, windows: &mut Vec<Window>) {
     unsafe {
         let mut root_return: Window = 0;
@@ -278,7 +317,10 @@ fn find_all_windows(display: *mut Display, window: Window, windows: &mut Vec<Win
             &mut nchildren,
         ) != 0
         {
-            let children_slice = std::slice::from_raw_parts(children, nchildren as usize);
+            // Use RAII guard to ensure XFree is called even if we panic
+            let guard = ChildrenGuard::new(children);
+            let children_slice = guard.as_slice(nchildren as usize);
+
             for &child in children_slice {
                 // Check if this window is visible and has a title
                 if is_window_visible(display, child) {
@@ -290,10 +332,7 @@ fn find_all_windows(display: *mut Display, window: Window, windows: &mut Vec<Win
                 // Recurse into children
                 find_all_windows(display, child, windows);
             }
-
-            if !children.is_null() {
-                XFree(children as *mut _);
-            }
+            // guard is dropped here, calling XFree automatically
         }
     }
 }

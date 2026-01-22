@@ -5,6 +5,14 @@
 //! - Element properties (title, role, value)
 //! - Actions (press, increment, etc.)
 //! - State information (enabled, focused)
+//!
+//! # Thread Safety
+//!
+//! The AXUIElement API is generally thread-safe for reading element properties,
+//! but actions that modify UI state should be performed from the main thread.
+//! The `AXElement` wrapper in this module does not enforce thread affinity,
+//! so callers should ensure appropriate synchronization when using these APIs
+//! from multiple threads.
 
 use crate::automation::macos::window::WindowId;
 use crate::error::{DesktopCliError, Result};
@@ -344,12 +352,13 @@ impl AXElement {
                 let item = array.get(i);
                 let element_ref = item.as_CFTypeRef() as AXUIElementRef;
 
-                // Retain the element since we're going to store it
-                core_foundation::base::CFRetain(element_ref as core_foundation::base::CFTypeRef);
-
                 if let Some(elem) = AXElement::from_ref(element_ref) {
+                    // Only retain the element if from_ref succeeded (element is non-null)
+                    // This avoids leaking the reference if from_ref returns None
+                    core_foundation::base::CFRetain(element_ref as core_foundation::base::CFTypeRef);
                     children.push(elem);
                 }
+                // If from_ref returns None (null element), we don't retain and don't leak
             }
 
             children

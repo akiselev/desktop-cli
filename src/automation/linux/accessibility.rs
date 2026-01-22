@@ -5,6 +5,14 @@
 //! - Element properties (name, role, description)
 //! - Actions (click, press, etc.)
 //! - State information (enabled, visible, focused)
+//!
+//! # Thread Safety
+//!
+//! The `AtSpiConnection` uses zbus blocking connections which are thread-safe.
+//! However, the accessibility bus connection is typically per-session, and
+//! concurrent modifications to UI elements from multiple threads may cause
+//! race conditions at the application level. For best results, serialize
+//! accessibility operations or use appropriate synchronization.
 
 use crate::error::{DesktopCliError, Result};
 use crate::rpc::types::{PatternResult, TreeDumpOptions, UiaElement};
@@ -445,15 +453,17 @@ impl AtSpiConnection {
         // First, get the character count to know how much to delete
         let char_count = self.get_character_count(elem).unwrap_or(0);
 
-        // Delete existing text
+        // Delete existing text (best-effort, log errors but continue)
         if char_count > 0 {
-            conn.call_method(
+            if let Err(e) = conn.call_method(
                 Some(&elem.bus_name),
                 elem.path.as_ref(),
                 Some(ATSPI_EDITABLE_TEXT_IFACE),
                 "DeleteText",
                 &(0i32, char_count),
-            ).ok(); // Ignore errors
+            ) {
+                tracing::warn!("Failed to delete existing text before insert: {}", e);
+            }
         }
 
         // Insert new text
