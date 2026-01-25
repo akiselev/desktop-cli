@@ -51,10 +51,11 @@ jobs:
         run: docker build -t desktop-cli-test .
 
       - name: Run E2E tests in container
+        timeout-minutes: 3
         run: |
-          timeout 120 docker run --rm \
+          docker run --rm --init \
             -e RUST_BACKTRACE=1 \
-            desktop-cli-test || { echo "Tests timed out or failed"; exit 1; }
+            desktop-cli-test 2>&1
 
   # Build check for release
   build:

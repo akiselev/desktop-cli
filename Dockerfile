@@ -116,6 +116,6 @@ echo "=== Tests complete ==="
 EOF
 RUN chmod +x /app/run-tests.sh
 
-# Run with Xvfb for X11 display
-ENTRYPOINT ["xvfb-run", "--auto-servernum", "--server-args=-screen 0 1024x768x24", "/app/run-tests.sh"]
+# Run with Xvfb - use exec form with bash wrapper for proper signal handling
+ENTRYPOINT ["/bin/bash", "-c", "exec xvfb-run --auto-servernum --server-args='-screen 0 1024x768x24' /app/run-tests.sh"]
 CMD []
