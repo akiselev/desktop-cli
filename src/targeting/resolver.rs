@@ -382,7 +382,8 @@ mod tests {
     fn test_resolve_by_title() {
         let windows = make_windows();
 
-        let query = WindowQuery::parse("title:PCB").unwrap();
+        // Use wildcard for contains match
+        let query = WindowQuery::parse("title:*PCB*").unwrap();
         let result = resolve_window(&query, &windows).unwrap();
         assert!(result.title.contains("PCB"));
     }
