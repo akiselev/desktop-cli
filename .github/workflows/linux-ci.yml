@@ -42,7 +42,7 @@ jobs:
   # E2E tests run in Docker with Xvfb + AT-SPI2
   e2e-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -52,15 +52,6 @@ jobs:
 
       - name: Run E2E tests in container
         run: |
-          docker run --rm \
-            -e RUST_BACKTRACE=1 \
-            desktop-cli-test \
-            ./tests/fixtures/gtk_test_app/gtk_test_app &
-
-          # Wait for container to be ready
-          sleep 5
-
-          # Run actual tests
           docker run --rm \
             -e RUST_BACKTRACE=1 \
             desktop-cli-test

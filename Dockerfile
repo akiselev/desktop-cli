@@ -94,12 +94,19 @@ exec dbus-run-session -- bash -c '
     # Enable accessibility
     gsettings set org.gnome.desktop.interface toolkit-accessibility true 2>/dev/null || true
 
-    # Run the test binary
-    exec "$@"
-' _ "$@"
+    # Find and run the test binary (glob expansion happens here)
+    TEST_BIN=$(ls /app/tests/desktop_cli-* 2>/dev/null | grep -v "\.d$" | head -1)
+    if [ -z "$TEST_BIN" ]; then
+        echo "ERROR: No test binary found in /app/tests/"
+        ls -la /app/tests/
+        exit 1
+    fi
+    echo "Running test binary: $TEST_BIN"
+    exec "$TEST_BIN" --test-threads=1 "$@"
+'
 EOF
 RUN chmod +x /app/run-tests.sh
 
 # Default: run tests with Xvfb (auto-selects display) and single-threaded (avoids races)
 ENTRYPOINT ["xvfb-run", "-a", "/app/run-tests.sh"]
-CMD ["./tests/desktop_cli-*", "--test-threads=1"]
+CMD []
