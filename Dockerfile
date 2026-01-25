@@ -52,6 +52,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgtk-3-0 \
     libgtk-3-dev \
     xvfb \
+    x11-utils \
     dbus-x11 \
     libx11-6 \
     libxcb1 \
@@ -84,26 +85,37 @@ ENV GTK_MODULES=gail:atk-bridge
 ENV GTK_A11Y=atspi
 ENV NO_AT_BRIDGE=0
 
-# Simple test runner - just runs tests with X11
+# Test runner with X11 display check
 COPY <<'EOF' /app/run-tests.sh
 #!/bin/bash
 set -ex
 
+echo "=== Environment ==="
 echo "DISPLAY=$DISPLAY"
+echo "PWD=$(pwd)"
+
+# Verify X11 is working
+if [ -n "$DISPLAY" ]; then
+    echo "=== Testing X11 connection ==="
+    xdpyinfo -display "$DISPLAY" | head -5 || echo "xdpyinfo failed but continuing..."
+fi
 
 # Find test binary
+echo "=== Finding test binary ==="
+ls -la /app/tests/
 TEST_BIN=$(ls /app/tests/desktop_cli-* 2>/dev/null | grep -v "\.d$" | head -1)
 if [ -z "$TEST_BIN" ]; then
     echo "ERROR: No test binary found"
-    ls -la /app/tests/
     exit 1
 fi
 
-echo "Running: $TEST_BIN"
-exec "$TEST_BIN" --test-threads=1 --nocapture "$@"
+echo "=== Running tests ==="
+echo "Binary: $TEST_BIN"
+"$TEST_BIN" --test-threads=1 --nocapture "$@"
+echo "=== Tests complete ==="
 EOF
 RUN chmod +x /app/run-tests.sh
 
-# Run tests directly - they skip gracefully if DISPLAY not set
-ENTRYPOINT ["/app/run-tests.sh"]
+# Run with Xvfb for X11 display
+ENTRYPOINT ["xvfb-run", "--auto-servernum", "--server-args=-screen 0 1024x768x24", "/app/run-tests.sh"]
 CMD []
