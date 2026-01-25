@@ -84,40 +84,23 @@ ENV GTK_MODULES=gail:atk-bridge
 ENV GTK_A11Y=atspi
 ENV NO_AT_BRIDGE=0
 
-# Test runner script that sets up Xvfb + D-Bus + accessibility
+# Simple test runner - just runs tests with X11
 COPY <<'EOF' /app/run-tests.sh
 #!/bin/bash
 set -ex
 
-echo "[run-tests] Starting..."
-echo "[run-tests] DISPLAY=$DISPLAY"
+echo "DISPLAY=$DISPLAY"
 
-# Start D-Bus session and run tests inside it
-echo "[run-tests] Starting dbus-run-session..."
-exec dbus-run-session -- bash -c '
-    echo "[dbus-session] D-Bus session started"
-    echo "[dbus-session] DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS"
+# Find test binary
+TEST_BIN=$(ls /app/tests/desktop_cli-* 2>/dev/null | grep -v "\.d$" | head -1)
+if [ -z "$TEST_BIN" ]; then
+    echo "ERROR: No test binary found"
+    ls -la /app/tests/
+    exit 1
+fi
 
-    # Start AT-SPI2 registry
-    echo "[dbus-session] Starting AT-SPI2 registry..."
-    /usr/libexec/at-spi2-registryd &
-    sleep 1
-
-    # Enable accessibility
-    echo "[dbus-session] Enabling accessibility..."
-    gsettings set org.gnome.desktop.interface toolkit-accessibility true 2>/dev/null || echo "[dbus-session] gsettings failed (ok)"
-
-    # Find and run the test binary (glob expansion happens here)
-    echo "[dbus-session] Finding test binary..."
-    TEST_BIN=$(ls /app/tests/desktop_cli-* 2>/dev/null | grep -v "\.d$" | head -1)
-    if [ -z "$TEST_BIN" ]; then
-        echo "ERROR: No test binary found in /app/tests/"
-        ls -la /app/tests/
-        exit 1
-    fi
-    echo "[dbus-session] Running test binary: $TEST_BIN"
-    exec "$TEST_BIN" --test-threads=1 "$@"
-'
+echo "Running: $TEST_BIN"
+exec "$TEST_BIN" --test-threads=1 --nocapture "$@"
 EOF
 RUN chmod +x /app/run-tests.sh
 
