@@ -20,6 +20,7 @@ pub enum RetryStrategy {
 }
 
 impl RetryStrategy {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "none" => Some(Self::None),
@@ -129,7 +130,7 @@ async fn execute_with_advanced_retry(
     enable_disambiguation: bool,
 ) -> GeminiResult<ElementDetectionResult> {
     let mut attempt = 0;
-    let context_hints = vec![
+    let context_hints = [
         "",
         "in the top half of the screen",
         "in the bottom half",

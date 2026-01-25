@@ -306,7 +306,7 @@ pub struct SummaryRequest {
 }
 
 /// Post-action summary showing what changed
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ActionSummary {
     /// What action was performed
     pub action: String,
@@ -329,21 +329,6 @@ pub struct ActionSummary {
     /// Nearby actionable elements (for context)
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub nearby_actions: Vec<String>,
-}
-
-impl Default for ActionSummary {
-    fn default() -> Self {
-        Self {
-            action: String::new(),
-            target: String::new(),
-            success: false,
-            new_focus: None,
-            appeared: Vec::new(),
-            disappeared: Vec::new(),
-            value_changes: Vec::new(),
-            nearby_actions: Vec::new(),
-        }
-    }
 }
 
 // ============================================================================

@@ -1,4 +1,6 @@
 // Library exports for testing and external use
+#![allow(dead_code)]
+#![allow(unused_imports)]
 
 pub mod agent;
 pub mod automation;

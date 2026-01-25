@@ -21,15 +21,6 @@ pub type Result<T> = std::result::Result<T, OpsError>;
 /// Linux platform implementation using AT-SPI2 and X11
 pub struct LinuxPlatform;
 
-fn list_windows(exe_filter: Option<&str>, title_filter: Option<&str>) -> Result<Vec<WindowInfo>> {
-    linux::window::list_windows(exe_filter, title_filter).map_err(|e| OpsError(e.to_string()))
-}
-
-fn get_window_by_hwnd(hwnd: &str) -> Result<WindowInfo> {
-    let window_id = linux::window::parse_window_id(hwnd).map_err(|e| OpsError(e.to_string()))?;
-    linux::window::get_window_info_by_id(window_id).map_err(|e| OpsError(e.to_string()))
-}
-
 fn take_screenshot(hwnd: &str, _method: Option<&str>) -> Result<Screenshot> {
     linux::screenshot::capture_window(hwnd).map_err(|e| OpsError(e.to_string()))
 }

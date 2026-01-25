@@ -131,8 +131,7 @@ impl WindowQuery {
         let mut query = WindowQuery::default();
 
         // Check for index syntax (:1, :first, :last)
-        if input.starts_with(':') {
-            let index_str = &input[1..];
+        if let Some(index_str) = input.strip_prefix(':') {
             query.index = Some(parse_index(index_str)?);
             return Ok(query);
         }

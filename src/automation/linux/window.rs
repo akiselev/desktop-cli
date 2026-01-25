@@ -70,14 +70,13 @@ pub fn list_windows(
     let mut result = Vec::new();
     for &window_id in windows {
         if let Ok(info) = get_window_info(&conn, window_id) {
-            let matches_exe = exe_filter.map_or(true, |filter| {
+            let matches_exe = exe_filter.is_none_or(|filter| {
                 info.executable
                     .to_lowercase()
                     .contains(&filter.to_lowercase())
             });
-            let matches_title = title_filter.map_or(true, |filter| {
-                info.title.to_lowercase().contains(&filter.to_lowercase())
-            });
+            let matches_title = title_filter
+                .is_none_or(|filter| info.title.to_lowercase().contains(&filter.to_lowercase()));
 
             if matches_exe && matches_title {
                 result.push(info);

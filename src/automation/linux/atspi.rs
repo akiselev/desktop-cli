@@ -322,11 +322,9 @@ fn find_matching_elements(
 
 /// Check if element matches simple selector
 fn element_matches_selector(element: &UiaElement, selector: &str) -> bool {
-    if selector.starts_with('#') {
-        let id = &selector[1..];
+    if let Some(id) = selector.strip_prefix('#') {
         element.automation_id == id || element.name.to_lowercase().contains(&id.to_lowercase())
-    } else if selector.starts_with('.') {
-        let class = &selector[1..];
+    } else if let Some(class) = selector.strip_prefix('.') {
         element.class_name == class
     } else {
         element.control_type.to_lowercase() == selector.to_lowercase()

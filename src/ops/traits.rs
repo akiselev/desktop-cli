@@ -71,6 +71,7 @@ pub trait DesktopPlatform {
     ) -> Result<PatternResult>;
 
     /// Get visual summary of window or element
+    #[allow(clippy::too_many_arguments)]
     fn get_summary(
         &self,
         hwnd: &str,
