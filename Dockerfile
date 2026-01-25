@@ -104,6 +104,6 @@ exec "$TEST_BIN" --test-threads=1 --nocapture "$@"
 EOF
 RUN chmod +x /app/run-tests.sh
 
-# Default: run tests with Xvfb (auto-selects display) and single-threaded (avoids races)
-ENTRYPOINT ["xvfb-run", "-a", "/app/run-tests.sh"]
+# Run tests directly - they skip gracefully if DISPLAY not set
+ENTRYPOINT ["/app/run-tests.sh"]
 CMD []
