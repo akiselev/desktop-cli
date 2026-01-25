@@ -9,11 +9,26 @@ use atspi::proxy::component::ComponentProxy;
 use atspi::proxy::value::ValueProxy;
 use atspi::proxy::text::TextProxy;
 use atspi::proxy::action::ActionProxy;
+use zbus::fdo::DBusProxy;
 use atspi::{AccessibilityConnection, CoordType, Interface, InterfaceSet, Role};
 use std::time::Duration;
 
-/// Connect to AT-SPI2 and get accessible object for window
-async fn get_accessible_for_window(window_id: u32) -> Result<AccessibleProxy<'static>> {
+/// Connect to AT-SPI2 and get accessible window for an application matching the X11 window's PID
+///
+/// Uses PID matching: gets the X11 window's _NET_WM_PID, then finds the AT-SPI2 application
+/// whose D-Bus connection has the same PID via org.freedesktop.DBus.GetConnectionUnixProcessID.
+async fn get_accessible_for_window(window_id: u32) -> Result<(AccessibilityConnection, String, String)> {
+    // Get the X11 window info including PID
+    let window_info = crate::automation::linux::window::get_window_info_by_id(window_id)?;
+    let target_pid = window_info.pid;
+
+    if target_pid == 0 {
+        return Err(DesktopCliError::Platform(format!(
+            "Window 0x{:x} has no _NET_WM_PID property. Cannot match to AT-SPI2 application.",
+            window_id
+        )));
+    }
+
     let connection = AccessibilityConnection::new()
         .await
         .map_err(|e| DesktopCliError::Platform(format!(
@@ -22,10 +37,16 @@ async fn get_accessible_for_window(window_id: u32) -> Result<AccessibleProxy<'st
 
     let zbus_conn = connection.connection().clone();
 
+    // Create D-Bus proxy to query PIDs of AT-SPI2 connections
+    let dbus_proxy = DBusProxy::new(&zbus_conn)
+        .await
+        .map_err(|e| DesktopCliError::Platform(format!("Failed to create D-Bus proxy: {}", e)))?;
+
+    // Get all AT-SPI2 applications from registry
     let registry_accessible = AccessibleProxy::builder(&zbus_conn)
         .destination("org.a11y.atspi.Registry")
         .map_err(|e| DesktopCliError::Platform(format!("Failed to build registry proxy: {}", e)))?
-        .path("/org/a11y/atspi/registry")
+        .path("/org/a11y/atspi/accessible/root")
         .map_err(|e| DesktopCliError::Platform(format!("Failed to set path: {}", e)))?
         .build()
         .await
@@ -35,30 +56,33 @@ async fn get_accessible_for_window(window_id: u32) -> Result<AccessibleProxy<'st
         DesktopCliError::Platform(format!("Failed to get desktop applications: {}", e))
     })?;
 
-    for child_ref in children {
-        let accessible = AccessibleProxy::builder(&zbus_conn)
-            .destination(child_ref.name.clone())
-            .ok()
-            .and_then(|b| b.path(child_ref.path.clone()).ok());
+    // Find the app whose D-Bus connection has the matching PID
+    for child_ref in &children {
+        // Get PID of this AT-SPI2 app's D-Bus connection
+        let app_pid = dbus_proxy.get_connection_unix_process_id(child_ref.name.as_str().try_into().unwrap())
+            .await
+            .ok();
 
-        if let Some(builder) = accessible {
-            if let Ok(acc) = builder.build().await {
-                if let Ok(app_children) = acc.get_children().await {
-                    for window_ref in app_children {
-                        let window_builder = AccessibleProxy::builder(&zbus_conn)
-                            .destination(window_ref.name.clone())
-                            .ok()
-                            .and_then(|b| b.path(window_ref.path.clone()).ok());
+        if let Some(pid) = app_pid {
+            if pid == target_pid {
+                // Found the matching app - return its first window (or root if no windows)
+                let app_builder = AccessibleProxy::builder(&zbus_conn)
+                    .destination(child_ref.name.as_str())
+                    .ok()
+                    .and_then(|b| b.path("/org/a11y/atspi/accessible/root").ok());
 
-                        if let Some(wb) = window_builder {
-                            if let Ok(window) = wb.build().await {
-                                if let Ok(name) = window.name().await {
-                                    if name.contains(&format!("0x{:x}", window_id)) {
-                                        return Ok(window);
-                                    }
-                                }
+                if let Some(builder) = app_builder {
+                    if let Ok(acc) = builder.build().await {
+                        // Try to get first window child
+                        if let Ok(app_children) = acc.get_children().await {
+                            if !app_children.is_empty() {
+                                // Return first window
+                                let window_ref = &app_children[0];
+                                return Ok((connection, window_ref.name.to_string(), window_ref.path.to_string()));
                             }
                         }
+                        // No windows, return app root
+                        return Ok((connection, child_ref.name.to_string(), "/org/a11y/atspi/accessible/root".to_string()));
                     }
                 }
             }
@@ -66,8 +90,8 @@ async fn get_accessible_for_window(window_id: u32) -> Result<AccessibleProxy<'st
     }
 
     Err(DesktopCliError::Platform(format!(
-        "Could not find accessible for window 0x{:x}",
-        window_id
+        "Could not find AT-SPI2 application for window 0x{:x} (PID: {}). Make sure the application supports AT-SPI2 accessibility.",
+        window_id, target_pid
     )))
 }
 
@@ -217,14 +241,27 @@ pub fn dump_tree(window_id: &str, max_depth: u32) -> Result<UiaElement> {
     let window_id_num = parse_window_id(window_id)?;
 
     with_atspi_runtime(async {
-        let accessible = get_accessible_for_window(window_id_num).await?;
+        let (connection, dest, path) = get_accessible_for_window(window_id_num).await?;
+
+        let zbus_conn = connection.connection();
+
+        let accessible = AccessibleProxy::builder(zbus_conn)
+            .destination(dest.as_str())
+            .map_err(|e| DesktopCliError::Platform(format!("Failed to build proxy: {}", e)))?
+            .path(path.as_str())
+            .map_err(|e| DesktopCliError::Platform(format!("Failed to set path: {}", e)))?
+            .build()
+            .await
+            .map_err(|e| DesktopCliError::Platform(format!("Failed to build accessible: {}", e)))?;
+
         traverse_element(&accessible, 0, max_depth).await
     })
 }
 
 /// Find elements matching selector
 pub fn find_elements(window_id: &str, selector: &str, find_all: bool) -> Result<Vec<UiaElement>> {
-    let root = dump_tree(window_id, 20)?;
+    // Reduced depth from 20 to 10 for performance; AT-SPI2 tree traversal is slower than Windows UIA
+    let root = dump_tree(window_id, 10)?;
 
     let mut results = Vec::new();
     find_matching_elements(&root, selector, find_all, &mut results);
@@ -297,8 +334,19 @@ pub fn invoke_pattern(
     let window_id_num = parse_window_id(window_id)?;
 
     with_atspi_runtime(async {
-        let accessible = get_accessible_for_window(window_id_num).await?;
-        let root = traverse_element(&accessible, 0, 20).await?;
+        let (connection, dest, path) = get_accessible_for_window(window_id_num).await?;
+        let zbus_conn = connection.connection();
+
+        let accessible = AccessibleProxy::builder(zbus_conn)
+            .destination(dest.as_str())
+            .map_err(|e| DesktopCliError::Platform(format!("Failed to build proxy: {}", e)))?
+            .path(path.as_str())
+            .map_err(|e| DesktopCliError::Platform(format!("Failed to set path: {}", e)))?
+            .build()
+            .await
+            .map_err(|e| DesktopCliError::Platform(format!("Failed to build accessible: {}", e)))?;
+
+        let root = traverse_element(&accessible, 0, 10).await?;
 
         let mut results = Vec::new();
         find_matching_elements(&root, selector, false, &mut results);

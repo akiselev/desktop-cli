@@ -111,3 +111,25 @@ pub fn get_window_info_by_id(window_id: u32) -> Result<WindowInfo> {
 
     get_window_info(&conn, window_id)
 }
+
+/// Get window title for AT-SPI2 matching
+///
+/// Returns the _NET_WM_NAME property for the given X11 window ID.
+/// Used by atspi.rs to correlate X11 windows with AT-SPI2 accessible objects.
+pub fn get_window_title(window_id: u32) -> Result<String> {
+    let (conn, _screen_num) = RustConnection::connect(None)
+        .map_err(|e| crate::error::DesktopCliError::Platform(format!("X11 connection failed: {}", e)))?;
+
+    let net_wm_name = conn.intern_atom(false, b"_NET_WM_NAME")
+        .map_err(|e| crate::error::DesktopCliError::Platform(format!("Failed to intern atom: {}", e)))?
+        .reply()
+        .map_err(|e| crate::error::DesktopCliError::Platform(format!("Failed to get atom reply: {}", e)))?
+        .atom;
+
+    let title_prop = conn.get_property(false, window_id, net_wm_name, AtomEnum::ANY, 0, 1024)
+        .map_err(|e| crate::error::DesktopCliError::Platform(format!("Failed to get property: {}", e)))?
+        .reply()
+        .map_err(|e| crate::error::DesktopCliError::Platform(format!("Failed to get property reply: {}", e)))?;
+
+    Ok(String::from_utf8_lossy(&title_prop.value).to_string())
+}
