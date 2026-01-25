@@ -7,6 +7,9 @@
 # =============================================================================
 FROM rust:1.84 AS builder
 
+# Install libxdo-dev for enigo (input simulation)
+RUN apt-get update && apt-get install -y --no-install-recommends libxdo-dev && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Copy manifests first for better caching
