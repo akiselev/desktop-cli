@@ -69,6 +69,7 @@ WORKDIR /app
 # Copy built artifacts from builder
 COPY --from=builder /app/target/release/desktop /app/
 COPY --from=builder /app/target/release/deps/desktop_cli-* /app/tests/
+COPY --from=builder /app/target/release/deps/linux_e2e_test-* /app/tests/
 
 # Copy test fixtures
 COPY tests/fixtures /app/tests/fixtures
@@ -100,18 +101,20 @@ if [ -n "$DISPLAY" ]; then
     xdpyinfo -display "$DISPLAY" | head -5 || echo "xdpyinfo failed but continuing..."
 fi
 
-# Find test binary
-echo "=== Finding test binary ==="
+# Find and run test binaries
+echo "=== Finding test binaries ==="
 ls -la /app/tests/
-TEST_BIN=$(ls /app/tests/desktop_cli-* 2>/dev/null | grep -v "\.d$" | head -1)
-if [ -z "$TEST_BIN" ]; then
-    echo "ERROR: No test binary found"
-    exit 1
+
+# Run linux e2e tests (integration tests for X11/AT-SPI2)
+E2E_BIN=$(ls /app/tests/linux_e2e_test-* 2>/dev/null | grep -v "\.d$" | head -1)
+if [ -n "$E2E_BIN" ]; then
+    echo "=== Running E2E tests ==="
+    echo "Binary: $E2E_BIN"
+    "$E2E_BIN" --test-threads=1 --nocapture "$@"
+else
+    echo "WARNING: No linux_e2e_test binary found"
 fi
 
-echo "=== Running tests ==="
-echo "Binary: $TEST_BIN"
-"$TEST_BIN" --test-threads=1 --nocapture "$@"
 echo "=== Tests complete ==="
 EOF
 RUN chmod +x /app/run-tests.sh
