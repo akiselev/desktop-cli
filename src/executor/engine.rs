@@ -1,7 +1,10 @@
 #[cfg(windows)]
 use crate::automation::windows::{capture_screenshot, click_at_coords, parse_hwnd, type_text, ScreenshotMethod};
+#[cfg(windows)]
 use crate::error::{DesktopCliError, Result};
+#[cfg(windows)]
 use crate::executor::parser::{is_dangerous_instruction, validate_instructions};
+#[cfg(windows)]
 use crate::executor::state::{ExecutionState, ExecutionSummary};
 use crate::gemini::client::GeminiClient;
 #[cfg(windows)]
@@ -13,6 +16,7 @@ use windows::Win32::Foundation::HWND;
 
 /// Multi-step instruction executor
 pub struct Executor {
+    #[cfg_attr(not(windows), allow(dead_code))]
     gemini_client: GeminiClient,
 }
 
@@ -223,6 +227,7 @@ impl Executor {
 }
 
 /// Extract text to type from an instruction like "type hello world"
+#[cfg_attr(not(windows), allow(dead_code))]
 fn extract_text_from_instruction(instruction: &str) -> String {
     let lower = instruction.to_lowercase();
 

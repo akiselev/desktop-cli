@@ -1,6 +1,10 @@
+#[cfg(windows)]
 use desktop_cli::automation::windows::uia::tree::{dump_tree, element_from_hwnd, element_to_uia};
+#[cfg(windows)]
 use desktop_cli::automation::windows::window::list_windows;
+#[cfg(windows)]
 use desktop_cli::rpc::types::TreeDumpOptions;
+#[cfg(windows)]
 use uiautomation::UIAutomation;
 
 #[test]

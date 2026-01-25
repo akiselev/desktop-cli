@@ -59,3 +59,20 @@ windows = { version = "0.58", features = [
 ] }
 win-screenshot = "4"
 uiautomation = "0.24"
+
+# macOS Automation (macOS only)
+[target.'cfg(target_os = "macos")'.dependencies]
+accessibility-sys = "0.1"
+enigo = "0.2"
+xcap = "0.0.13"
+
+# Linux Automation (Linux only)
+[target.'cfg(target_os = "linux")'.dependencies]
+atspi = { version = "0.21", default-features = false, features = ["tokio", "connection-tokio", "proxies-tokio"] }
+x11rb = "0.13"
+enigo = "0.2"
+xcap = "0.0.13"
+
+[dev-dependencies]
+quickcheck = "1.0"
+quickcheck_macros = "1.0"

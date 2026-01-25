@@ -26,6 +26,9 @@ pub enum DesktopCliError {
 
     #[error("Configuration error: {0}")]
     ConfigError(String),
+
+    #[error("Platform error: {0}")]
+    Platform(String),
 }
 
 /// Errors specific to Gemini API integration

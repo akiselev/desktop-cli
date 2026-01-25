@@ -249,13 +249,21 @@ fn truncate(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len - 3])
+        // Find a valid char boundary at or before max_len - 3
+        let target = max_len.saturating_sub(3);
+        let boundary = s.char_indices()
+            .take_while(|(i, _)| *i <= target)
+            .last()
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+        format!("{}...", &s[..boundary])
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::automation::types::WindowRect;
 
     fn make_windows() -> Vec<WindowInfo> {
         vec![
@@ -263,6 +271,7 @@ mod tests {
                 hwnd: "0x1234".to_string(),
                 title: "Altium Designer - PCB1.PcbDoc".to_string(),
                 executable: "C:\\Program Files\\Altium\\Altium.exe".to_string(),
+                rect: WindowRect { x: 0, y: 0, width: 800, height: 600 },
                 pid: 1000,
                 class_name: Some("TfrmAltium".to_string()),
             },
@@ -270,6 +279,7 @@ mod tests {
                 hwnd: "0x5678".to_string(),
                 title: "Altium Designer - Schematic1.SchDoc".to_string(),
                 executable: "C:\\Program Files\\Altium\\Altium.exe".to_string(),
+                rect: WindowRect { x: 0, y: 0, width: 800, height: 600 },
                 pid: 1000,
                 class_name: Some("TfrmAltium".to_string()),
             },
@@ -277,6 +287,7 @@ mod tests {
                 hwnd: "0x9ABC".to_string(),
                 title: "Untitled - Notepad".to_string(),
                 executable: "C:\\Windows\\notepad.exe".to_string(),
+                rect: WindowRect { x: 0, y: 0, width: 800, height: 600 },
                 pid: 2000,
                 class_name: Some("Notepad".to_string()),
             },

@@ -316,6 +316,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::automation::types::WindowRect;
 
     fn make_windows() -> Vec<WindowInfo> {
         vec![
@@ -323,6 +324,7 @@ mod tests {
                 hwnd: "0x1234".to_string(),
                 title: "Altium Designer - PCB1.PcbDoc".to_string(),
                 executable: "Altium.exe".to_string(),
+                rect: WindowRect { x: 0, y: 0, width: 800, height: 600 },
                 pid: 1000,
                 class_name: Some("TfrmAltium".to_string()),
             },
@@ -330,6 +332,7 @@ mod tests {
                 hwnd: "0x5678".to_string(),
                 title: "Altium Designer - Schematic1.SchDoc".to_string(),
                 executable: "Altium.exe".to_string(),
+                rect: WindowRect { x: 0, y: 0, width: 800, height: 600 },
                 pid: 1000,
                 class_name: Some("TfrmAltium".to_string()),
             },
@@ -337,6 +340,7 @@ mod tests {
                 hwnd: "0x9ABC".to_string(),
                 title: "Untitled - Notepad".to_string(),
                 executable: "notepad.exe".to_string(),
+                rect: WindowRect { x: 0, y: 0, width: 800, height: 600 },
                 pid: 2000,
                 class_name: Some("Notepad".to_string()),
             },

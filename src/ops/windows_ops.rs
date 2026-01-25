@@ -3,6 +3,7 @@
 //! Direct implementations of desktop automation operations for Windows.
 
 use crate::automation::types::WindowInfo;
+use crate::ops::traits::DesktopPlatform;
 use crate::automation::windows::{
     capture_screenshot, get_window_info, list_windows as list_windows_raw, parse_hwnd,
     ScreenshotMethod,
@@ -40,25 +41,29 @@ impl From<crate::error::DesktopCliError> for OpsError {
 pub type Result<T> = std::result::Result<T, OpsError>;
 
 // ============================================================================
+// Platform Implementation
+// ============================================================================
+
+/// Windows platform implementation using UI Automation
+pub struct WindowsPlatform;
+
+// ============================================================================
 // Window Operations
 // ============================================================================
 
-/// List all visible windows with optional filters
-pub fn list_windows(
+fn list_windows(
     exe_filter: Option<&str>,
     title_filter: Option<&str>,
 ) -> Result<Vec<WindowInfo>> {
     list_windows_raw(exe_filter, title_filter).map_err(|e| OpsError(e.to_string()))
 }
 
-/// Get info for a specific window by HWND string
-pub fn get_window_by_hwnd(hwnd_str: &str) -> Result<WindowInfo> {
+fn get_window_by_hwnd(hwnd_str: &str) -> Result<WindowInfo> {
     let hwnd = parse_hwnd(hwnd_str).map_err(|e| OpsError(e.to_string()))?;
     get_window_info(hwnd).map_err(|e| OpsError(e.to_string()))
 }
 
-/// Parse HWND string to native handle
-pub fn parse_hwnd_string(hwnd_str: &str) -> Result<HWND> {
+fn parse_hwnd_string(hwnd_str: &str) -> Result<HWND> {
     parse_hwnd(hwnd_str).map_err(|e| OpsError(e.to_string()))
 }
 
@@ -66,8 +71,7 @@ pub fn parse_hwnd_string(hwnd_str: &str) -> Result<HWND> {
 // Screenshot Operations
 // ============================================================================
 
-/// Take a screenshot of a window
-pub fn take_screenshot(hwnd_str: &str, method: Option<&str>) -> Result<Screenshot> {
+fn take_screenshot(hwnd_str: &str, method: Option<&str>) -> Result<Screenshot> {
     let hwnd = parse_hwnd(hwnd_str).map_err(|e| OpsError(e.to_string()))?;
     let method = method
         .and_then(|m| ScreenshotMethod::from_str(m))
@@ -87,8 +91,7 @@ pub fn take_screenshot(hwnd_str: &str, method: Option<&str>) -> Result<Screensho
 // UIA Operations
 // ============================================================================
 
-/// Dump the UIA element tree
-pub fn dump_tree(hwnd_str: &str, max_depth: u32) -> Result<UiaElement> {
+fn dump_tree(hwnd_str: &str, max_depth: u32) -> Result<UiaElement> {
     let hwnd = parse_hwnd(hwnd_str).map_err(|e| OpsError(e.to_string()))?;
 
     let automation = UIAutomation::new().map_err(|e| OpsError(format!("UIA init failed: {}", e)))?;
@@ -106,8 +109,7 @@ pub fn dump_tree(hwnd_str: &str, max_depth: u32) -> Result<UiaElement> {
     uia::dump_tree(&automation, &root, &options).map_err(|e| OpsError(e.to_string()))
 }
 
-/// Find elements by selector
-pub fn find_elements(hwnd_str: &str, selector_str: &str, find_all: bool) -> Result<Vec<UiaElement>> {
+fn find_elements(hwnd_str: &str, selector_str: &str, find_all: bool) -> Result<Vec<UiaElement>> {
     let hwnd = parse_hwnd(hwnd_str).map_err(|e| OpsError(e.to_string()))?;
 
     let selector =
@@ -118,20 +120,18 @@ pub fn find_elements(hwnd_str: &str, selector_str: &str, find_all: bool) -> Resu
     let root = uia::element_from_hwnd(&automation, hwnd.0 as isize)
         .map_err(|e| OpsError(format!("Failed to get window element: {}", e)))?;
 
-    uia::find_elements(&automation, &root, &selector, find_all, 3000)
+    uia::find_elements(&automation, &root, &selector, find_all, 500)
         .map_err(|e| OpsError(e.to_string()))
 }
 
-/// Check if an element exists in a window
-pub fn element_exists(hwnd_str: &str, selector_str: &str) -> Result<bool> {
+fn element_exists(hwnd_str: &str, selector_str: &str) -> Result<bool> {
     match find_elements(hwnd_str, selector_str, false) {
         Ok(elements) => Ok(!elements.is_empty()),
         Err(_) => Ok(false),
     }
 }
 
-/// Invoke a pattern on an element
-pub fn invoke_pattern(
+fn invoke_pattern(
     hwnd_str: &str,
     selector_str: &str,
     pattern_str: &str,
@@ -151,7 +151,7 @@ pub fn invoke_pattern(
         .map_err(|e| OpsError(format!("Failed to get window element: {}", e)))?;
 
     // Find element
-    let elements = uia::find_elements(&automation, &root, &selector, false, 3000)
+    let elements = uia::find_elements(&automation, &root, &selector, false, 500)
         .map_err(|e| OpsError(e.to_string()))?;
 
     if elements.is_empty() {
@@ -168,8 +168,7 @@ pub fn invoke_pattern(
 // Summary and Query Operations (LLM-optimized)
 // ============================================================================
 
-/// Get a compact UI summary
-pub fn get_summary(
+fn get_summary(
     hwnd_str: &str,
     format: &str,
     include_bounds: bool,
@@ -221,8 +220,7 @@ pub fn get_summary(
     }
 }
 
-/// Query elements with enhanced LLM syntax
-pub fn query_elements(
+fn query_elements(
     hwnd_str: &str,
     query_str: &str,
     find_all: bool,
@@ -283,8 +281,7 @@ pub fn query_elements(
 // Input Operations
 // ============================================================================
 
-/// Click at coordinates or on an element
-pub fn click(
+fn click(
     hwnd_str: &str,
     click_type: &str,
     coords: Option<(i32, i32)>,
@@ -316,8 +313,7 @@ pub fn click(
     }
 }
 
-/// Type text (optionally after clicking on a selector)
-pub fn type_text(hwnd_str: &str, text: &str, selector: Option<&str>) -> Result<()> {
+fn type_text(hwnd_str: &str, text: &str, selector: Option<&str>) -> Result<()> {
     if let Some(selector_str) = selector {
         // Click to focus first
         click(hwnd_str, "left", None, Some(selector_str))?;
@@ -327,13 +323,11 @@ pub fn type_text(hwnd_str: &str, text: &str, selector: Option<&str>) -> Result<(
     input_type_text(text).map_err(|e| OpsError(e.to_string()))
 }
 
-/// Send key combination
-pub fn send_keys(keys: &str) -> Result<()> {
+fn send_keys(keys: &str) -> Result<()> {
     input_send_keys(keys).map_err(|e| OpsError(e.to_string()))
 }
 
-/// Scroll up or down
-pub fn scroll(direction: &str, amount: i32) -> Result<()> {
+fn scroll(direction: &str, amount: i32) -> Result<()> {
     let scroll_amount = match direction.to_lowercase().as_str() {
         "up" => amount * 120,
         "down" => -(amount * 120),
@@ -341,4 +335,162 @@ pub fn scroll(direction: &str, amount: i32) -> Result<()> {
     };
 
     input_scroll(scroll_amount).map_err(|e| OpsError(e.to_string()))
+}
+
+// ============================================================================
+// Public API (delegates to trait implementation)
+// ============================================================================
+
+pub fn list_windows_api(
+    exe_filter: Option<&str>,
+    title_filter: Option<&str>,
+) -> Result<Vec<WindowInfo>> {
+    WindowsPlatform.list_windows(exe_filter, title_filter)
+}
+
+pub fn get_window_by_hwnd_api(hwnd: &str) -> Result<WindowInfo> {
+    WindowsPlatform.get_window_by_hwnd(hwnd)
+}
+
+pub fn take_screenshot_api(hwnd: &str, method: Option<&str>) -> Result<Screenshot> {
+    WindowsPlatform.take_screenshot(hwnd, method)
+}
+
+pub fn dump_tree_api(hwnd: &str, max_depth: u32) -> Result<UiaElement> {
+    WindowsPlatform.dump_tree(hwnd, max_depth)
+}
+
+pub fn find_elements_api(hwnd: &str, selector: &str, find_all: bool) -> Result<Vec<UiaElement>> {
+    WindowsPlatform.find_elements(hwnd, selector, find_all)
+}
+
+pub fn element_exists_api(hwnd: &str, selector: &str) -> Result<bool> {
+    WindowsPlatform.element_exists(hwnd, selector)
+}
+
+pub fn invoke_pattern_api(
+    hwnd: &str,
+    selector: &str,
+    pattern: &str,
+    action: Option<&str>,
+) -> Result<PatternResult> {
+    WindowsPlatform.invoke_pattern(hwnd, selector, pattern, action)
+}
+
+pub fn get_summary_api(
+    hwnd: &str,
+    selector: &str,
+    include_invisible: bool,
+    include_offscreen: bool,
+    bbox: Option<[i32; 4]>,
+    max_depth: u32,
+    control_types: Option<Vec<String>>,
+) -> Result<String> {
+    WindowsPlatform.get_summary(hwnd, selector, include_invisible, include_offscreen, bbox, max_depth, control_types)
+}
+
+pub fn query_elements_api(hwnd: &str, selector: &str, find_all: bool) -> Result<QueryResult> {
+    WindowsPlatform.query_elements(hwnd, selector, find_all)
+}
+
+pub fn click_api(hwnd: &str, selector: &str, coords: Option<(i32, i32)>, button: Option<&str>) -> Result<()> {
+    WindowsPlatform.click(hwnd, selector, coords, button)
+}
+
+pub fn type_text_api(hwnd: &str, text: &str, selector: Option<&str>) -> Result<()> {
+    WindowsPlatform.type_text(hwnd, text, selector)
+}
+
+pub fn send_keys_api(keys: &str) -> Result<()> {
+    WindowsPlatform.send_keys(keys)
+}
+
+pub fn scroll_api(direction: &str, amount: i32) -> Result<()> {
+    WindowsPlatform.scroll(direction, amount)
+}
+
+// ============================================================================
+// Trait Implementation
+// ============================================================================
+
+impl DesktopPlatform for WindowsPlatform {
+    fn list_windows(
+        &self,
+        exe_filter: Option<&str>,
+        title_filter: Option<&str>,
+    ) -> Result<Vec<WindowInfo>> {
+        list_windows(exe_filter, title_filter)
+    }
+
+    fn get_window_by_hwnd(&self, hwnd: &str) -> Result<WindowInfo> {
+        get_window_by_hwnd(hwnd)
+    }
+
+    fn take_screenshot(&self, hwnd: &str, method: Option<&str>) -> Result<Screenshot> {
+        take_screenshot(hwnd, method)
+    }
+
+    fn dump_tree(&self, hwnd: &str, max_depth: u32) -> Result<UiaElement> {
+        dump_tree(hwnd, max_depth)
+    }
+
+    fn find_elements(&self, hwnd: &str, selector: &str, find_all: bool) -> Result<Vec<UiaElement>> {
+        find_elements(hwnd, selector, find_all)
+    }
+
+    fn element_exists(&self, hwnd: &str, selector: &str) -> Result<bool> {
+        element_exists(hwnd, selector)
+    }
+
+    fn invoke_pattern(
+        &self,
+        hwnd: &str,
+        selector: &str,
+        pattern: &str,
+        action: Option<&str>,
+    ) -> Result<PatternResult> {
+        invoke_pattern(hwnd, selector, pattern, action)
+    }
+
+    fn get_summary(
+        &self,
+        hwnd: &str,
+        selector: &str,
+        include_invisible: bool,
+        include_offscreen: bool,
+        bbox: Option<[i32; 4]>,
+        max_depth: u32,
+        control_types: Option<Vec<String>>,
+    ) -> Result<String> {
+        get_summary(
+            hwnd,
+            "text",
+            !include_invisible,
+            !include_offscreen,
+            bbox,
+            max_depth,
+            control_types,
+        )
+    }
+
+    fn query_elements(&self, hwnd: &str, selector: &str, find_all: bool) -> Result<QueryResult> {
+        query_elements(hwnd, selector, find_all)
+    }
+
+    fn click(&self, hwnd: &str, selector: &str, coords: Option<(i32, i32)>, button: Option<&str>) -> Result<()> {
+        let selector_opt = if selector.is_empty() { None } else { Some(selector) };
+        click(hwnd, button.unwrap_or("left"), coords, selector_opt)
+    }
+
+    fn type_text(&self, hwnd: &str, text: &str, selector: Option<&str>) -> Result<()> {
+        type_text(hwnd, text, selector)
+    }
+
+    fn send_keys(&self, keys: &str) -> Result<()> {
+        send_keys(keys)
+    }
+
+    fn scroll(&self, direction: &str, amount: i32) -> Result<()> {
+        scroll(direction, amount)
+    }
 }
