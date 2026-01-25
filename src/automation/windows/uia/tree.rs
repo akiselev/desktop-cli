@@ -1,11 +1,11 @@
 //! UIA element tree traversal and dumping
 
-use crate::rpc::types::{TreeDumpOptions, UiaElement};
 use super::selector::{Selector, SelectorSegment};
+use crate::rpc::types::{TreeDumpOptions, UiaElement};
 use uiautomation::patterns::{
-    UIExpandCollapsePattern, UIGridPattern, UIInvokePattern, UIRangeValuePattern,
-    UIScrollPattern, UISelectionItemPattern, UISelectionPattern, UITablePattern,
-    UITextPattern, UITogglePattern, UITransformPattern, UIValuePattern, UIWindowPattern,
+    UIExpandCollapsePattern, UIGridPattern, UIInvokePattern, UIRangeValuePattern, UIScrollPattern,
+    UISelectionItemPattern, UISelectionPattern, UITablePattern, UITextPattern, UITogglePattern,
+    UITransformPattern, UIValuePattern, UIWindowPattern,
 };
 use uiautomation::types::Handle;
 use uiautomation::{UIAutomation, UIElement, UITreeWalker};

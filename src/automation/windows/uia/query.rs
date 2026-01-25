@@ -407,7 +407,11 @@ pub fn apply_index_filter(elements: Vec<UiaElement>, index: &QueryIndex) -> Vec<
 }
 
 /// Check if element B is spatially related to anchor A
-pub fn check_spatial_relation(anchor: &UiaElement, candidate: &UiaElement, relation: SpatialRelation) -> bool {
+pub fn check_spatial_relation(
+    anchor: &UiaElement,
+    candidate: &UiaElement,
+    relation: SpatialRelation,
+) -> bool {
     let [ax, ay, aw, ah] = anchor.bounds;
     let [bx, by, bw, bh] = candidate.bounds;
 
@@ -421,15 +425,9 @@ pub fn check_spatial_relation(anchor: &UiaElement, candidate: &UiaElement, relat
             // B is below A if B's top is below A's bottom
             by > ay + ah && (bx < ax + aw && bx + bw > ax) // Overlapping horizontally
         }
-        SpatialRelation::Above => {
-            by + bh < ay && (bx < ax + aw && bx + bw > ax)
-        }
-        SpatialRelation::Right => {
-            bx > ax + aw && (by < ay + ah && by + bh > ay)
-        }
-        SpatialRelation::Left => {
-            bx + bw < ax && (by < ay + ah && by + bh > ay)
-        }
+        SpatialRelation::Above => by + bh < ay && (bx < ax + aw && bx + bw > ax),
+        SpatialRelation::Right => bx > ax + aw && (by < ay + ah && by + bh > ay),
+        SpatialRelation::Left => bx + bw < ax && (by < ay + ah && by + bh > ay),
         SpatialRelation::Near => {
             // Within 100 pixels
             let dist_x = (a_center_x - b_center_x).abs();
@@ -519,7 +517,10 @@ mod tests {
     #[test]
     fn test_parse_contains() {
         let query = parse_query("\"*Save*\"").unwrap();
-        assert_eq!(query.selector.segments[0].attributes[0].op, MatchOp::Contains);
+        assert_eq!(
+            query.selector.segments[0].attributes[0].op,
+            MatchOp::Contains
+        );
     }
 
     #[test]

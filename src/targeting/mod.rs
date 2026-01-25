@@ -17,4 +17,3 @@ pub use suggest::{
     format_suggestions, format_window_list, format_window_list_json, suggest_queries,
     WindowQuerySuggestions,
 };
-

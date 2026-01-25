@@ -8,4 +8,3 @@ pub use coordinates::*;
 pub use input::*;
 pub use screenshot::*;
 pub use window::*;
-

@@ -22,7 +22,9 @@ pub fn click_at_coords(x: i32, y: i32) -> Result<()> {
 
 #[cfg(not(target_os = "macos"))]
 pub fn click_at_coords(_x: i32, _y: i32) -> Result<()> {
-    Err(crate::error::DesktopCliError::Platform("macOS not supported on this platform".to_string()))
+    Err(crate::error::DesktopCliError::Platform(
+        "macOS not supported on this platform".to_string(),
+    ))
 }
 
 #[cfg(target_os = "macos")]
@@ -47,7 +49,9 @@ pub fn type_text(text: &str) -> Result<()> {
 
 #[cfg(not(target_os = "macos"))]
 pub fn type_text(_text: &str) -> Result<()> {
-    Err(crate::error::DesktopCliError::Platform("macOS not supported on this platform".to_string()))
+    Err(crate::error::DesktopCliError::Platform(
+        "macOS not supported on this platform".to_string(),
+    ))
 }
 
 #[cfg(target_os = "macos")]
@@ -71,7 +75,9 @@ pub fn send_keys(keys: &str) -> Result<()> {
 
 #[cfg(not(target_os = "macos"))]
 pub fn send_keys(_keys: &str) -> Result<()> {
-    Err(crate::error::DesktopCliError::Platform("macOS not supported on this platform".to_string()))
+    Err(crate::error::DesktopCliError::Platform(
+        "macOS not supported on this platform".to_string(),
+    ))
 }
 
 #[cfg(target_os = "macos")]
@@ -96,5 +102,7 @@ pub fn scroll(direction: &str, amount: i32) -> Result<()> {
 
 #[cfg(not(target_os = "macos"))]
 pub fn scroll(_direction: &str, _amount: i32) -> Result<()> {
-    Err(crate::error::DesktopCliError::Platform("macOS not supported on this platform".to_string()))
+    Err(crate::error::DesktopCliError::Platform(
+        "macOS not supported on this platform".to_string(),
+    ))
 }

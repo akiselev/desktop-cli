@@ -22,10 +22,14 @@ impl NormalizedBoundingBox {
 
     /// Validate that coordinates are within 0-1000 range
     pub fn validate(&self) -> GeminiResult<()> {
-        if self.y_min < 0.0 || self.y_min > 1000.0
-            || self.x_min < 0.0 || self.x_min > 1000.0
-            || self.y_max < 0.0 || self.y_max > 1000.0
-            || self.x_max < 0.0 || self.x_max > 1000.0
+        if self.y_min < 0.0
+            || self.y_min > 1000.0
+            || self.x_min < 0.0
+            || self.x_min > 1000.0
+            || self.y_max < 0.0
+            || self.y_max > 1000.0
+            || self.x_max < 0.0
+            || self.x_max > 1000.0
         {
             return Err(GeminiError::BoundingBoxError(format!(
                 "Coordinates out of 0-1000 range: {:?}",

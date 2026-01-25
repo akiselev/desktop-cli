@@ -27,7 +27,9 @@ fn not_implemented<T>() -> Result<T> {
 }
 
 fn platform_not_supported<T>() -> Result<T> {
-    Err(OpsError("Platform not supported on this system".to_string()))
+    Err(OpsError(
+        "Platform not supported on this system".to_string(),
+    ))
 }
 
 pub fn list_windows(
@@ -82,7 +84,12 @@ pub fn query_elements(_hwnd: &str, _selector: &str, _find_all: bool) -> Result<Q
     platform_not_supported()
 }
 
-pub fn click(_hwnd: &str, _selector: &str, _coords: Option<(i32, i32)>, _button: Option<&str>) -> Result<()> {
+pub fn click(
+    _hwnd: &str,
+    _selector: &str,
+    _coords: Option<(i32, i32)>,
+    _button: Option<&str>,
+) -> Result<()> {
     platform_not_supported()
 }
 
@@ -162,7 +169,13 @@ impl DesktopPlatform for MacOSPlatform {
         query_elements(hwnd, selector, find_all)
     }
 
-    fn click(&self, hwnd: &str, selector: &str, coords: Option<(i32, i32)>, button: Option<&str>) -> Result<()> {
+    fn click(
+        &self,
+        hwnd: &str,
+        selector: &str,
+        coords: Option<(i32, i32)>,
+        button: Option<&str>,
+    ) -> Result<()> {
         click(hwnd, selector, coords, button)
     }
 

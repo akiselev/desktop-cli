@@ -1,7 +1,7 @@
 //! Linux-specific operation implementations
 
-use crate::automation::types::WindowInfo;
 use crate::automation::linux;
+use crate::automation::types::WindowInfo;
 use crate::ops::traits::DesktopPlatform;
 use crate::rpc::types::{PatternResult, QueryResult, Screenshot, UiaElement};
 
@@ -21,39 +21,29 @@ pub type Result<T> = std::result::Result<T, OpsError>;
 /// Linux platform implementation using AT-SPI2 and X11
 pub struct LinuxPlatform;
 
-fn list_windows(
-    exe_filter: Option<&str>,
-    title_filter: Option<&str>,
-) -> Result<Vec<WindowInfo>> {
-    linux::window::list_windows(exe_filter, title_filter)
-        .map_err(|e| OpsError(e.to_string()))
+fn list_windows(exe_filter: Option<&str>, title_filter: Option<&str>) -> Result<Vec<WindowInfo>> {
+    linux::window::list_windows(exe_filter, title_filter).map_err(|e| OpsError(e.to_string()))
 }
 
 fn get_window_by_hwnd(hwnd: &str) -> Result<WindowInfo> {
-    let window_id = linux::window::parse_window_id(hwnd)
-        .map_err(|e| OpsError(e.to_string()))?;
-    linux::window::get_window_info_by_id(window_id)
-        .map_err(|e| OpsError(e.to_string()))
+    let window_id = linux::window::parse_window_id(hwnd).map_err(|e| OpsError(e.to_string()))?;
+    linux::window::get_window_info_by_id(window_id).map_err(|e| OpsError(e.to_string()))
 }
 
 fn take_screenshot(hwnd: &str, _method: Option<&str>) -> Result<Screenshot> {
-    linux::screenshot::capture_window(hwnd)
-        .map_err(|e| OpsError(e.to_string()))
+    linux::screenshot::capture_window(hwnd).map_err(|e| OpsError(e.to_string()))
 }
 
 fn dump_tree(hwnd: &str, max_depth: u32) -> Result<UiaElement> {
-    linux::atspi::dump_tree(hwnd, max_depth)
-        .map_err(|e| OpsError(e.to_string()))
+    linux::atspi::dump_tree(hwnd, max_depth).map_err(|e| OpsError(e.to_string()))
 }
 
 fn find_elements(hwnd: &str, selector: &str, find_all: bool) -> Result<Vec<UiaElement>> {
-    linux::atspi::find_elements(hwnd, selector, find_all)
-        .map_err(|e| OpsError(e.to_string()))
+    linux::atspi::find_elements(hwnd, selector, find_all).map_err(|e| OpsError(e.to_string()))
 }
 
 fn element_exists(hwnd: &str, selector: &str) -> Result<bool> {
-    linux::atspi::element_exists(hwnd, selector)
-        .map_err(|e| OpsError(e.to_string()))
+    linux::atspi::element_exists(hwnd, selector).map_err(|e| OpsError(e.to_string()))
 }
 
 fn invoke_pattern(
@@ -75,37 +65,48 @@ fn get_summary(
     max_depth: u32,
     control_types: Option<Vec<String>>,
 ) -> Result<String> {
-    linux::atspi::get_summary(hwnd, selector, include_invisible, include_offscreen, bbox, max_depth, control_types)
-        .map_err(|e| OpsError(e.to_string()))
+    linux::atspi::get_summary(
+        hwnd,
+        selector,
+        include_invisible,
+        include_offscreen,
+        bbox,
+        max_depth,
+        control_types,
+    )
+    .map_err(|e| OpsError(e.to_string()))
 }
 
 fn query_elements(hwnd: &str, selector: &str, find_all: bool) -> Result<QueryResult> {
-    linux::atspi::query_elements(hwnd, selector, find_all)
-        .map_err(|e| OpsError(e.to_string()))
+    linux::atspi::query_elements(hwnd, selector, find_all).map_err(|e| OpsError(e.to_string()))
 }
 
-fn click(_hwnd: &str, _selector: &str, coords: Option<(i32, i32)>, _button: Option<&str>) -> Result<()> {
+fn click(
+    _hwnd: &str,
+    _selector: &str,
+    coords: Option<(i32, i32)>,
+    _button: Option<&str>,
+) -> Result<()> {
     if let Some((x, y)) = coords {
-        linux::input::click_at_coords(x, y)
-            .map_err(|e| OpsError(e.to_string()))
+        linux::input::click_at_coords(x, y).map_err(|e| OpsError(e.to_string()))
     } else {
-        Err(OpsError("Coordinates required for Linux click (selector-based click not yet implemented)".to_string()))
+        Err(OpsError(
+            "Coordinates required for Linux click (selector-based click not yet implemented)"
+                .to_string(),
+        ))
     }
 }
 
 fn type_text(_hwnd: &str, text: &str, _selector: Option<&str>) -> Result<()> {
-    linux::input::type_text(text)
-        .map_err(|e| OpsError(e.to_string()))
+    linux::input::type_text(text).map_err(|e| OpsError(e.to_string()))
 }
 
 fn send_keys(keys: &str) -> Result<()> {
-    linux::input::send_keys(keys)
-        .map_err(|e| OpsError(e.to_string()))
+    linux::input::send_keys(keys).map_err(|e| OpsError(e.to_string()))
 }
 
 fn scroll(direction: &str, amount: i32) -> Result<()> {
-    linux::input::scroll(direction, amount)
-        .map_err(|e| OpsError(e.to_string()))
+    linux::input::scroll(direction, amount).map_err(|e| OpsError(e.to_string()))
 }
 
 // ============================================================================
@@ -157,14 +158,27 @@ pub fn get_summary_api(
     max_depth: u32,
     control_types: Option<Vec<String>>,
 ) -> Result<String> {
-    LinuxPlatform.get_summary(hwnd, selector, include_invisible, include_offscreen, bbox, max_depth, control_types)
+    LinuxPlatform.get_summary(
+        hwnd,
+        selector,
+        include_invisible,
+        include_offscreen,
+        bbox,
+        max_depth,
+        control_types,
+    )
 }
 
 pub fn query_elements_api(hwnd: &str, selector: &str, find_all: bool) -> Result<QueryResult> {
     LinuxPlatform.query_elements(hwnd, selector, find_all)
 }
 
-pub fn click_api(hwnd: &str, selector: &str, coords: Option<(i32, i32)>, button: Option<&str>) -> Result<()> {
+pub fn click_api(
+    hwnd: &str,
+    selector: &str,
+    coords: Option<(i32, i32)>,
+    button: Option<&str>,
+) -> Result<()> {
     LinuxPlatform.click(hwnd, selector, coords, button)
 }
 
@@ -190,15 +204,13 @@ impl DesktopPlatform for LinuxPlatform {
         exe_filter: Option<&str>,
         title_filter: Option<&str>,
     ) -> Result<Vec<WindowInfo>> {
-        linux::window::list_windows(exe_filter, title_filter)
-            .map_err(|e| OpsError(e.to_string()))
+        linux::window::list_windows(exe_filter, title_filter).map_err(|e| OpsError(e.to_string()))
     }
 
     fn get_window_by_hwnd(&self, hwnd: &str) -> Result<WindowInfo> {
         let window_id = u32::from_str_radix(hwnd.trim_start_matches("0x"), 16)
             .map_err(|e| OpsError(format!("Invalid window ID: {}", e)))?;
-        linux::window::get_window_info_by_id(window_id)
-            .map_err(|e| OpsError(e.to_string()))
+        linux::window::get_window_info_by_id(window_id).map_err(|e| OpsError(e.to_string()))
     }
 
     fn take_screenshot(&self, hwnd: &str, method: Option<&str>) -> Result<Screenshot> {
@@ -237,14 +249,28 @@ impl DesktopPlatform for LinuxPlatform {
         max_depth: u32,
         control_types: Option<Vec<String>>,
     ) -> Result<String> {
-        get_summary(hwnd, selector, include_invisible, include_offscreen, bbox, max_depth, control_types)
+        get_summary(
+            hwnd,
+            selector,
+            include_invisible,
+            include_offscreen,
+            bbox,
+            max_depth,
+            control_types,
+        )
     }
 
     fn query_elements(&self, hwnd: &str, selector: &str, find_all: bool) -> Result<QueryResult> {
         query_elements(hwnd, selector, find_all)
     }
 
-    fn click(&self, hwnd: &str, selector: &str, coords: Option<(i32, i32)>, button: Option<&str>) -> Result<()> {
+    fn click(
+        &self,
+        hwnd: &str,
+        selector: &str,
+        coords: Option<(i32, i32)>,
+        button: Option<&str>,
+    ) -> Result<()> {
         click(hwnd, selector, coords, button)
     }
 

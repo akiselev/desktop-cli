@@ -510,4 +510,3 @@ pub struct AgentResponse {
     /// History of all steps
     pub history: Vec<AgentStepInfo>,
 }
-

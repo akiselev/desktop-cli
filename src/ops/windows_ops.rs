@@ -3,22 +3,20 @@
 //! Direct implementations of desktop automation operations for Windows.
 
 use crate::automation::types::WindowInfo;
-use crate::ops::traits::DesktopPlatform;
+use crate::automation::windows::input::{
+    click_at_coords, double_click_at_coords, right_click_at_coords, scroll as input_scroll,
+    send_keys as input_send_keys, type_text as input_type_text,
+};
+use crate::automation::windows::uia::{self, PatternOp, Selector, SummaryOptions, TreeDumpOptions};
 use crate::automation::windows::{
     capture_screenshot, get_window_info, list_windows as list_windows_raw, parse_hwnd,
     ScreenshotMethod,
 };
-use crate::automation::windows::input::{
-    click_at_coords, double_click_at_coords, right_click_at_coords,
-    scroll as input_scroll, send_keys as input_send_keys, type_text as input_type_text,
-};
-use crate::automation::windows::uia::{
-    self, PatternOp, Selector, SummaryOptions, TreeDumpOptions,
-};
-use crate::rpc::types::{PatternResult, QueryResult, Screenshot, UiaElement, ElementRef};
-use windows::Win32::Foundation::HWND;
-use uiautomation::UIAutomation;
+use crate::ops::traits::DesktopPlatform;
+use crate::rpc::types::{ElementRef, PatternResult, QueryResult, Screenshot, UiaElement};
 use uiautomation::types::Handle;
+use uiautomation::UIAutomation;
+use windows::Win32::Foundation::HWND;
 
 /// Error type for operations
 #[derive(Debug)]
@@ -51,10 +49,7 @@ pub struct WindowsPlatform;
 // Window Operations
 // ============================================================================
 
-fn list_windows(
-    exe_filter: Option<&str>,
-    title_filter: Option<&str>,
-) -> Result<Vec<WindowInfo>> {
+fn list_windows(exe_filter: Option<&str>, title_filter: Option<&str>) -> Result<Vec<WindowInfo>> {
     list_windows_raw(exe_filter, title_filter).map_err(|e| OpsError(e.to_string()))
 }
 
@@ -94,7 +89,8 @@ fn take_screenshot(hwnd_str: &str, method: Option<&str>) -> Result<Screenshot> {
 fn dump_tree(hwnd_str: &str, max_depth: u32) -> Result<UiaElement> {
     let hwnd = parse_hwnd(hwnd_str).map_err(|e| OpsError(e.to_string()))?;
 
-    let automation = UIAutomation::new().map_err(|e| OpsError(format!("UIA init failed: {}", e)))?;
+    let automation =
+        UIAutomation::new().map_err(|e| OpsError(format!("UIA init failed: {}", e)))?;
 
     let root = uia::element_from_hwnd(&automation, hwnd.0 as isize)
         .map_err(|e| OpsError(format!("Failed to get window element: {}", e)))?;
@@ -115,7 +111,8 @@ fn find_elements(hwnd_str: &str, selector_str: &str, find_all: bool) -> Result<V
     let selector =
         Selector::parse(selector_str).map_err(|e| OpsError(format!("Invalid selector: {}", e)))?;
 
-    let automation = UIAutomation::new().map_err(|e| OpsError(format!("UIA init failed: {}", e)))?;
+    let automation =
+        UIAutomation::new().map_err(|e| OpsError(format!("UIA init failed: {}", e)))?;
 
     let root = uia::element_from_hwnd(&automation, hwnd.0 as isize)
         .map_err(|e| OpsError(format!("Failed to get window element: {}", e)))?;
@@ -145,7 +142,8 @@ fn invoke_pattern(
     let pattern_op = PatternOp::from_str(pattern_str)
         .ok_or_else(|| OpsError(format!("Unknown pattern: {}", pattern_str)))?;
 
-    let automation = UIAutomation::new().map_err(|e| OpsError(format!("UIA init failed: {}", e)))?;
+    let automation =
+        UIAutomation::new().map_err(|e| OpsError(format!("UIA init failed: {}", e)))?;
 
     let root = uia::element_from_hwnd(&automation, hwnd.0 as isize)
         .map_err(|e| OpsError(format!("Failed to get window element: {}", e)))?;
@@ -179,7 +177,8 @@ fn get_summary(
 ) -> Result<String> {
     let hwnd = parse_hwnd(hwnd_str).map_err(|e| OpsError(e.to_string()))?;
 
-    let automation = UIAutomation::new().map_err(|e| OpsError(format!("UIA init failed: {}", e)))?;
+    let automation =
+        UIAutomation::new().map_err(|e| OpsError(format!("UIA init failed: {}", e)))?;
 
     let root = uia::element_from_hwnd(&automation, hwnd.0 as isize)
         .map_err(|e| OpsError(format!("Failed to get window element: {}", e)))?;
@@ -197,8 +196,7 @@ fn get_summary(
         max_list_items: 10,
     };
 
-    let tree =
-        uia::dump_tree(&automation, &root, &options).map_err(|e| OpsError(e.to_string()))?;
+    let tree = uia::dump_tree(&automation, &root, &options).map_err(|e| OpsError(e.to_string()))?;
 
     // Build summary
     let summary_options = SummaryOptions {
@@ -220,24 +218,27 @@ fn get_summary(
     }
 }
 
-fn query_elements(
-    hwnd_str: &str,
-    query_str: &str,
-    find_all: bool,
-) -> Result<QueryResult> {
+fn query_elements(hwnd_str: &str, query_str: &str, find_all: bool) -> Result<QueryResult> {
     let hwnd = parse_hwnd(hwnd_str).map_err(|e| OpsError(e.to_string()))?;
 
-    let query = uia::parse_query(query_str).map_err(|e| OpsError(format!("Invalid query: {}", e)))?;
+    let query =
+        uia::parse_query(query_str).map_err(|e| OpsError(format!("Invalid query: {}", e)))?;
 
-    let automation = UIAutomation::new().map_err(|e| OpsError(format!("UIA init failed: {}", e)))?;
+    let automation =
+        UIAutomation::new().map_err(|e| OpsError(format!("UIA init failed: {}", e)))?;
 
     let root = uia::element_from_hwnd(&automation, hwnd.0 as isize)
         .map_err(|e| OpsError(format!("Failed to get window element: {}", e)))?;
 
     // Find elements
-    let mut elements =
-        uia::find_elements(&automation, &root, &query.selector, find_all || query.index.is_some(), 3000)
-            .map_err(|e| OpsError(e.to_string()))?;
+    let mut elements = uia::find_elements(
+        &automation,
+        &root,
+        &query.selector,
+        find_all || query.index.is_some(),
+        3000,
+    )
+    .map_err(|e| OpsError(e.to_string()))?;
 
     // Apply filters
     if !query.state_filters.is_empty() {
@@ -303,7 +304,9 @@ fn click(
         let bounds = elements[0].bounds;
         (bounds[0] + bounds[2] / 2, bounds[1] + bounds[3] / 2)
     } else {
-        return Err(OpsError("Either coords or selector must be specified".to_string()));
+        return Err(OpsError(
+            "Either coords or selector must be specified".to_string(),
+        ));
     };
 
     match click_type.to_lowercase().as_str() {
@@ -386,14 +389,27 @@ pub fn get_summary_api(
     max_depth: u32,
     control_types: Option<Vec<String>>,
 ) -> Result<String> {
-    WindowsPlatform.get_summary(hwnd, selector, include_invisible, include_offscreen, bbox, max_depth, control_types)
+    WindowsPlatform.get_summary(
+        hwnd,
+        selector,
+        include_invisible,
+        include_offscreen,
+        bbox,
+        max_depth,
+        control_types,
+    )
 }
 
 pub fn query_elements_api(hwnd: &str, selector: &str, find_all: bool) -> Result<QueryResult> {
     WindowsPlatform.query_elements(hwnd, selector, find_all)
 }
 
-pub fn click_api(hwnd: &str, selector: &str, coords: Option<(i32, i32)>, button: Option<&str>) -> Result<()> {
+pub fn click_api(
+    hwnd: &str,
+    selector: &str,
+    coords: Option<(i32, i32)>,
+    button: Option<&str>,
+) -> Result<()> {
     WindowsPlatform.click(hwnd, selector, coords, button)
 }
 
@@ -477,8 +493,18 @@ impl DesktopPlatform for WindowsPlatform {
         query_elements(hwnd, selector, find_all)
     }
 
-    fn click(&self, hwnd: &str, selector: &str, coords: Option<(i32, i32)>, button: Option<&str>) -> Result<()> {
-        let selector_opt = if selector.is_empty() { None } else { Some(selector) };
+    fn click(
+        &self,
+        hwnd: &str,
+        selector: &str,
+        coords: Option<(i32, i32)>,
+        button: Option<&str>,
+    ) -> Result<()> {
+        let selector_opt = if selector.is_empty() {
+            None
+        } else {
+            Some(selector)
+        };
         click(hwnd, button.unwrap_or("left"), coords, selector_opt)
     }
 

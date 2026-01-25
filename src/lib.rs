@@ -11,4 +11,3 @@ pub mod targeting;
 
 // Re-export commonly used types
 pub use error::{DesktopCliError, Result};
-

@@ -129,7 +129,13 @@ async fn execute_with_advanced_retry(
     enable_disambiguation: bool,
 ) -> GeminiResult<ElementDetectionResult> {
     let mut attempt = 0;
-    let context_hints = vec!["", "in the top half of the screen", "in the bottom half", "on the left side", "on the right side"];
+    let context_hints = vec![
+        "",
+        "in the top half of the screen",
+        "in the bottom half",
+        "on the left side",
+        "on the right side",
+    ];
 
     loop {
         // Build instruction with context hint if we're retrying

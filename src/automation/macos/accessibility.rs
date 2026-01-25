@@ -1,7 +1,7 @@
 //! Cocoa Accessibility tree operations
 
-use crate::rpc::types::UiaElement;
 use crate::error::Result;
+use crate::rpc::types::UiaElement;
 
 #[cfg(target_os = "macos")]
 pub fn dump_tree(window_ref: &str, max_depth: u32) -> Result<UiaElement> {
@@ -22,11 +22,13 @@ pub fn dump_tree(window_ref: &str, max_depth: u32) -> Result<UiaElement> {
     // 7. Respect max_depth parameter to limit recursion
     let _ = (window_ref, max_depth);
     Err(crate::error::DesktopCliError::Platform(
-        "macOS accessibility tree not yet implemented.".to_string()
+        "macOS accessibility tree not yet implemented.".to_string(),
     ))
 }
 
 #[cfg(not(target_os = "macos"))]
 pub fn dump_tree(_window_ref: &str, _max_depth: u32) -> Result<UiaElement> {
-    Err(crate::error::DesktopCliError::Platform("macOS not supported on this platform".to_string()))
+    Err(crate::error::DesktopCliError::Platform(
+        "macOS not supported on this platform".to_string(),
+    ))
 }

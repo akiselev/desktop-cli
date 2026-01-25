@@ -7,8 +7,8 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_KEYUP,
     KEYEVENTF_UNICODE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP,
-    MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_WHEEL,
-    MOUSEINPUT, VIRTUAL_KEY,
+    MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_WHEEL, MOUSEINPUT,
+    VIRTUAL_KEY,
 };
 
 /// Click at the specified window-relative coordinates
@@ -75,8 +75,13 @@ pub fn click_at_coords(hwnd: HWND, window_x: i32, window_y: i32) -> Result<()> {
         }
     }
 
-    tracing::debug!("Clicked at window coords ({}, {}), screen coords ({}, {})",
-        window_x, window_y, screen_x, screen_y);
+    tracing::debug!(
+        "Clicked at window coords ({}, {}), screen coords ({}, {})",
+        window_x,
+        window_y,
+        screen_x,
+        screen_y
+    );
 
     Ok(())
 }
@@ -180,7 +185,11 @@ pub fn double_click_at_coords(hwnd: HWND, window_x: i32, window_y: i32) -> Resul
         }
     }
 
-    tracing::debug!("Double-clicked at window coords ({}, {})", window_x, window_y);
+    tracing::debug!(
+        "Double-clicked at window coords ({}, {})",
+        window_x,
+        window_y
+    );
 
     Ok(())
 }
@@ -243,7 +252,11 @@ pub fn right_click_at_coords(hwnd: HWND, window_x: i32, window_y: i32) -> Result
         }
     }
 
-    tracing::debug!("Right-clicked at window coords ({}, {})", window_x, window_y);
+    tracing::debug!(
+        "Right-clicked at window coords ({}, {})",
+        window_x,
+        window_y
+    );
 
     Ok(())
 }
@@ -384,45 +397,108 @@ pub fn press_key(vk_code: u16) -> Result<()> {
 pub fn get_vk_code(key_name: &str) -> Option<u16> {
     let key_map: HashMap<&str, u16> = [
         // Letters
-        ("a", 0x41), ("b", 0x42), ("c", 0x43), ("d", 0x44), ("e", 0x45),
-        ("f", 0x46), ("g", 0x47), ("h", 0x48), ("i", 0x49), ("j", 0x4A),
-        ("k", 0x4B), ("l", 0x4C), ("m", 0x4D), ("n", 0x4E), ("o", 0x4F),
-        ("p", 0x50), ("q", 0x51), ("r", 0x52), ("s", 0x53), ("t", 0x54),
-        ("u", 0x55), ("v", 0x56), ("w", 0x57), ("x", 0x58), ("y", 0x59),
+        ("a", 0x41),
+        ("b", 0x42),
+        ("c", 0x43),
+        ("d", 0x44),
+        ("e", 0x45),
+        ("f", 0x46),
+        ("g", 0x47),
+        ("h", 0x48),
+        ("i", 0x49),
+        ("j", 0x4A),
+        ("k", 0x4B),
+        ("l", 0x4C),
+        ("m", 0x4D),
+        ("n", 0x4E),
+        ("o", 0x4F),
+        ("p", 0x50),
+        ("q", 0x51),
+        ("r", 0x52),
+        ("s", 0x53),
+        ("t", 0x54),
+        ("u", 0x55),
+        ("v", 0x56),
+        ("w", 0x57),
+        ("x", 0x58),
+        ("y", 0x59),
         ("z", 0x5A),
         // Numbers
-        ("0", 0x30), ("1", 0x31), ("2", 0x32), ("3", 0x33), ("4", 0x34),
-        ("5", 0x35), ("6", 0x36), ("7", 0x37), ("8", 0x38), ("9", 0x39),
+        ("0", 0x30),
+        ("1", 0x31),
+        ("2", 0x32),
+        ("3", 0x33),
+        ("4", 0x34),
+        ("5", 0x35),
+        ("6", 0x36),
+        ("7", 0x37),
+        ("8", 0x38),
+        ("9", 0x39),
         // Function keys
-        ("f1", 0x70), ("f2", 0x71), ("f3", 0x72), ("f4", 0x73), ("f5", 0x74),
-        ("f6", 0x75), ("f7", 0x76), ("f8", 0x77), ("f9", 0x78), ("f10", 0x79),
-        ("f11", 0x7A), ("f12", 0x7B),
+        ("f1", 0x70),
+        ("f2", 0x71),
+        ("f3", 0x72),
+        ("f4", 0x73),
+        ("f5", 0x74),
+        ("f6", 0x75),
+        ("f7", 0x76),
+        ("f8", 0x77),
+        ("f9", 0x78),
+        ("f10", 0x79),
+        ("f11", 0x7A),
+        ("f12", 0x7B),
         // Modifiers
-        ("ctrl", 0x11), ("control", 0x11), ("lctrl", 0xA2), ("rctrl", 0xA3),
-        ("alt", 0x12), ("menu", 0x12), ("lalt", 0xA4), ("ralt", 0xA5),
-        ("shift", 0x10), ("lshift", 0xA0), ("rshift", 0xA1),
-        ("win", 0x5B), ("lwin", 0x5B), ("rwin", 0x5C),
+        ("ctrl", 0x11),
+        ("control", 0x11),
+        ("lctrl", 0xA2),
+        ("rctrl", 0xA3),
+        ("alt", 0x12),
+        ("menu", 0x12),
+        ("lalt", 0xA4),
+        ("ralt", 0xA5),
+        ("shift", 0x10),
+        ("lshift", 0xA0),
+        ("rshift", 0xA1),
+        ("win", 0x5B),
+        ("lwin", 0x5B),
+        ("rwin", 0x5C),
         // Special keys
-        ("enter", 0x0D), ("return", 0x0D),
+        ("enter", 0x0D),
+        ("return", 0x0D),
         ("tab", 0x09),
-        ("escape", 0x1B), ("esc", 0x1B),
-        ("space", 0x20), ("spacebar", 0x20),
-        ("backspace", 0x08), ("back", 0x08),
-        ("delete", 0x2E), ("del", 0x2E),
-        ("insert", 0x2D), ("ins", 0x2D),
+        ("escape", 0x1B),
+        ("esc", 0x1B),
+        ("space", 0x20),
+        ("spacebar", 0x20),
+        ("backspace", 0x08),
+        ("back", 0x08),
+        ("delete", 0x2E),
+        ("del", 0x2E),
+        ("insert", 0x2D),
+        ("ins", 0x2D),
         ("home", 0x24),
         ("end", 0x23),
-        ("pageup", 0x21), ("pgup", 0x21),
-        ("pagedown", 0x22), ("pgdn", 0x22),
+        ("pageup", 0x21),
+        ("pgup", 0x21),
+        ("pagedown", 0x22),
+        ("pgdn", 0x22),
         // Arrow keys
-        ("up", 0x26), ("down", 0x28), ("left", 0x25), ("right", 0x27),
+        ("up", 0x26),
+        ("down", 0x28),
+        ("left", 0x25),
+        ("right", 0x27),
         // Other
-        ("printscreen", 0x2C), ("prtsc", 0x2C),
+        ("printscreen", 0x2C),
+        ("prtsc", 0x2C),
         ("pause", 0x13),
-        ("capslock", 0x14), ("caps", 0x14),
+        ("capslock", 0x14),
+        ("caps", 0x14),
         ("numlock", 0x90),
         ("scrolllock", 0x91),
-    ].iter().cloned().collect();
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
     key_map.get(key_name.to_lowercase().as_str()).copied()
 }
@@ -432,7 +508,9 @@ pub fn send_keys(keys: &str) -> Result<()> {
     let parts: Vec<&str> = keys.split('+').map(|s| s.trim()).collect();
 
     if parts.is_empty() {
-        return Err(DesktopCliError::AutomationError("Empty key combination".to_string()));
+        return Err(DesktopCliError::AutomationError(
+            "Empty key combination".to_string(),
+        ));
     }
 
     // Parse all key codes

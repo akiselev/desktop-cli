@@ -4,31 +4,37 @@ use crate::error::{DesktopCliError, Result};
 use enigo::{Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
 
 pub fn click_at_coords(x: i32, y: i32) -> Result<()> {
-    let mut enigo = Enigo::new(&Settings::default())
-        .map_err(|e| DesktopCliError::AutomationError(format!("Failed to create enigo instance: {}", e)))?;
+    let mut enigo = Enigo::new(&Settings::default()).map_err(|e| {
+        DesktopCliError::AutomationError(format!("Failed to create enigo instance: {}", e))
+    })?;
 
-    enigo.move_mouse(x, y, Coordinate::Abs)
+    enigo
+        .move_mouse(x, y, Coordinate::Abs)
         .map_err(|e| DesktopCliError::AutomationError(format!("Failed to move mouse: {}", e)))?;
 
-    enigo.button(Button::Left, Direction::Click)
+    enigo
+        .button(Button::Left, Direction::Click)
         .map_err(|e| DesktopCliError::AutomationError(format!("Failed to click: {}", e)))?;
 
     Ok(())
 }
 
 pub fn type_text(text: &str) -> Result<()> {
-    let mut enigo = Enigo::new(&Settings::default())
-        .map_err(|e| DesktopCliError::AutomationError(format!("Failed to create enigo instance: {}", e)))?;
+    let mut enigo = Enigo::new(&Settings::default()).map_err(|e| {
+        DesktopCliError::AutomationError(format!("Failed to create enigo instance: {}", e))
+    })?;
 
-    enigo.text(text)
+    enigo
+        .text(text)
         .map_err(|e| DesktopCliError::AutomationError(format!("Failed to type text: {}", e)))?;
 
     Ok(())
 }
 
 pub fn send_keys(combo: &str) -> Result<()> {
-    let mut enigo = Enigo::new(&Settings::default())
-        .map_err(|e| DesktopCliError::AutomationError(format!("Failed to create enigo instance: {}", e)))?;
+    let mut enigo = Enigo::new(&Settings::default()).map_err(|e| {
+        DesktopCliError::AutomationError(format!("Failed to create enigo instance: {}", e))
+    })?;
 
     let keys: Vec<&str> = combo.split('+').map(|s| s.trim()).collect();
 
@@ -49,34 +55,44 @@ pub fn send_keys(combo: &str) -> Result<()> {
     }
 
     for modifier in &modifiers {
-        enigo.key(*modifier, Direction::Press)
-            .map_err(|e| DesktopCliError::AutomationError(format!("Failed to press modifier: {}", e)))?;
+        enigo.key(*modifier, Direction::Press).map_err(|e| {
+            DesktopCliError::AutomationError(format!("Failed to press modifier: {}", e))
+        })?;
     }
 
     if let Some(key) = main_key {
-        enigo.key(key, Direction::Click)
+        enigo
+            .key(key, Direction::Click)
             .map_err(|e| DesktopCliError::AutomationError(format!("Failed to press key: {}", e)))?;
     }
 
     for modifier in modifiers.iter().rev() {
-        enigo.key(*modifier, Direction::Release)
-            .map_err(|e| DesktopCliError::AutomationError(format!("Failed to release modifier: {}", e)))?;
+        enigo.key(*modifier, Direction::Release).map_err(|e| {
+            DesktopCliError::AutomationError(format!("Failed to release modifier: {}", e))
+        })?;
     }
 
     Ok(())
 }
 
 pub fn scroll(direction: &str, amount: i32) -> Result<()> {
-    let mut enigo = Enigo::new(&Settings::default())
-        .map_err(|e| DesktopCliError::AutomationError(format!("Failed to create enigo instance: {}", e)))?;
+    let mut enigo = Enigo::new(&Settings::default()).map_err(|e| {
+        DesktopCliError::AutomationError(format!("Failed to create enigo instance: {}", e))
+    })?;
 
     let scroll_amount = match direction.to_lowercase().as_str() {
         "up" => amount,
         "down" => -amount,
-        _ => return Err(DesktopCliError::AutomationError(format!("Invalid scroll direction: {}", direction))),
+        _ => {
+            return Err(DesktopCliError::AutomationError(format!(
+                "Invalid scroll direction: {}",
+                direction
+            )))
+        }
     };
 
-    enigo.scroll(scroll_amount, enigo::Axis::Vertical)
+    enigo
+        .scroll(scroll_amount, enigo::Axis::Vertical)
         .map_err(|e| DesktopCliError::AutomationError(format!("Failed to scroll: {}", e)))?;
 
     Ok(())
@@ -142,7 +158,10 @@ fn parse_key(key_str: &str) -> Result<Key> {
             if key_str.len() == 1 {
                 Ok(Key::Unicode(key_str.chars().next().unwrap()))
             } else {
-                Err(DesktopCliError::AutomationError(format!("Unknown key: {}", key_str)))
+                Err(DesktopCliError::AutomationError(format!(
+                    "Unknown key: {}",
+                    key_str
+                )))
             }
         }
     }

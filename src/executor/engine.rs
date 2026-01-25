@@ -1,14 +1,16 @@
 #[cfg(windows)]
-use crate::automation::windows::{capture_screenshot, click_at_coords, parse_hwnd, type_text, ScreenshotMethod};
+use crate::automation::windows::{
+    capture_screenshot, click_at_coords, parse_hwnd, type_text, ScreenshotMethod,
+};
 #[cfg(windows)]
 use crate::error::{DesktopCliError, Result};
 #[cfg(windows)]
 use crate::executor::parser::{is_dangerous_instruction, validate_instructions};
 #[cfg(windows)]
 use crate::executor::state::{ExecutionState, ExecutionSummary};
-use crate::gemini::client::GeminiClient;
 #[cfg(windows)]
 use crate::gemini::bounding_box::{convert_to_pixels, NormalizedBoundingBox};
+use crate::gemini::client::GeminiClient;
 #[cfg(windows)]
 use crate::gemini::retry::{detect_element_with_retry, RetryStrategy};
 #[cfg(windows)]
@@ -66,7 +68,12 @@ impl Executor {
 
         // Execute each instruction
         for (i, instruction) in validated_instructions.iter().enumerate() {
-            tracing::info!("Step {}/{}: {}", i + 1, validated_instructions.len(), instruction);
+            tracing::info!(
+                "Step {}/{}: {}",
+                i + 1,
+                validated_instructions.len(),
+                instruction
+            );
 
             match self
                 .execute_single_instruction(hwnd_raw, instruction, &retry_strategy)
@@ -155,9 +162,9 @@ impl Executor {
 
         let pixel_bbox = convert_to_pixels(&normalized_bbox, screenshot.width, screenshot.height)
             .map_err(|e| DesktopCliError::ExecutionError {
-                step: 2,
-                reason: format!("Coordinate conversion failed: {}", e),
-            })?;
+            step: 2,
+            reason: format!("Coordinate conversion failed: {}", e),
+        })?;
 
         let (center_x, center_y) = pixel_bbox.center();
         tracing::debug!("Target coordinates: ({}, {})", center_x, center_y);
@@ -186,10 +193,7 @@ impl Executor {
 
                 // Extract text to type from instruction or action_params
                 let text_to_type = if let Some(params) = detection_result.action_params {
-                    params["text"]
-                        .as_str()
-                        .unwrap_or(instruction)
-                        .to_string()
+                    params["text"].as_str().unwrap_or(instruction).to_string()
                 } else {
                     // Try to extract text from instruction (e.g., "type hello world" -> "hello world")
                     extract_text_from_instruction(instruction)
@@ -204,10 +208,16 @@ impl Executor {
 
             "scroll" | "drag" | "hover" => {
                 // These actions are not yet implemented
-                tracing::warn!("Action type '{}' not yet implemented", detection_result.action_type);
+                tracing::warn!(
+                    "Action type '{}' not yet implemented",
+                    detection_result.action_type
+                );
                 return Err(DesktopCliError::ExecutionError {
                     step: 3,
-                    reason: format!("Action type '{}' not implemented", detection_result.action_type),
+                    reason: format!(
+                        "Action type '{}' not implemented",
+                        detection_result.action_type
+                    ),
                 });
             }
 
@@ -266,13 +276,7 @@ mod tests {
             extract_text_from_instruction("enter test@example.com"),
             "test@example.com"
         );
-        assert_eq!(
-            extract_text_from_instruction("input 12345"),
-            "12345"
-        );
-        assert_eq!(
-            extract_text_from_instruction("just text"),
-            "just text"
-        );
+        assert_eq!(extract_text_from_instruction("input 12345"), "12345");
+        assert_eq!(extract_text_from_instruction("just text"), "just text");
     }
 }

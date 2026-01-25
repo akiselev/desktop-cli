@@ -1,7 +1,7 @@
 //! Screenshot capture via xcap
 
-use crate::rpc::types::Screenshot;
 use crate::error::Result;
+use crate::rpc::types::Screenshot;
 
 #[cfg(target_os = "macos")]
 pub fn capture_window(window_ref: &str) -> Result<Screenshot> {
@@ -30,5 +30,7 @@ pub fn capture_window(window_ref: &str) -> Result<Screenshot> {
 
 #[cfg(not(target_os = "macos"))]
 pub fn capture_window(_window_ref: &str) -> Result<Screenshot> {
-    Err(crate::error::DesktopCliError::Platform("macOS not supported on this platform".to_string()))
+    Err(crate::error::DesktopCliError::Platform(
+        "macOS not supported on this platform".to_string(),
+    ))
 }

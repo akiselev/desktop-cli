@@ -4,7 +4,10 @@ use crate::automation::types::WindowInfo;
 use crate::error::Result;
 
 #[cfg(target_os = "macos")]
-pub fn list_windows(exe_filter: Option<&str>, title_filter: Option<&str>) -> Result<Vec<WindowInfo>> {
+pub fn list_windows(
+    exe_filter: Option<&str>,
+    title_filter: Option<&str>,
+) -> Result<Vec<WindowInfo>> {
     // TODO: Implement using Core Graphics CGWindowListCopyWindowInfo
     // with accessibility_sys for window info
     //
@@ -26,6 +29,11 @@ pub fn list_windows(exe_filter: Option<&str>, title_filter: Option<&str>) -> Res
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn list_windows(_exe_filter: Option<&str>, _title_filter: Option<&str>) -> Result<Vec<WindowInfo>> {
-    Err(crate::error::DesktopCliError::Platform("macOS not supported on this platform".to_string()))
+pub fn list_windows(
+    _exe_filter: Option<&str>,
+    _title_filter: Option<&str>,
+) -> Result<Vec<WindowInfo>> {
+    Err(crate::error::DesktopCliError::Platform(
+        "macOS not supported on this platform".to_string(),
+    ))
 }

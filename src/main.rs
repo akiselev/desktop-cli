@@ -275,8 +275,15 @@ fn main() -> anyhow::Result<()> {
             let focus_region = parse_region(&region);
             let roles_vec = roles.map(|r| r.split(',').map(|s| s.trim().to_string()).collect());
 
-            let result =
-                ops::get_summary(&hwnd, &format, bounds, paths, focus_region, depth, roles_vec)?;
+            let result = ops::get_summary(
+                &hwnd,
+                &format,
+                bounds,
+                paths,
+                focus_region,
+                depth,
+                roles_vec,
+            )?;
             println!("{}", result);
         }
 
@@ -286,8 +293,7 @@ fn main() -> anyhow::Result<()> {
             all,
             format: _,
         } => {
-            let hwnd =
-                resolve_target_with_element(&window, &selector, cli.target.as_deref())?;
+            let hwnd = resolve_target_with_element(&window, &selector, cli.target.as_deref())?;
             let result = ops::query_elements(&hwnd, &selector, all)?;
             println!("{}", serde_json::to_string_pretty(&result)?);
         }
@@ -321,8 +327,7 @@ fn main() -> anyhow::Result<()> {
             selector,
             value,
         } => {
-            let hwnd =
-                resolve_target_with_element(&window, &selector, cli.target.as_deref())?;
+            let hwnd = resolve_target_with_element(&window, &selector, cli.target.as_deref())?;
             ops::type_text(&hwnd, &value, Some(&selector))?;
             println!("Text typed successfully");
         }
@@ -355,7 +360,11 @@ fn main() -> anyhow::Result<()> {
             );
         }
 
-        Commands::DumpTree { window, depth, json } => {
+        Commands::DumpTree {
+            window,
+            depth,
+            json,
+        } => {
             let hwnd = resolve_target(Some(&window), None, cli.target.as_deref())?;
             let result = ops::dump_tree(&hwnd, depth)?;
             if json {
@@ -370,8 +379,7 @@ fn main() -> anyhow::Result<()> {
             selector,
             all,
         } => {
-            let hwnd =
-                resolve_target_with_element(&window, &selector, cli.target.as_deref())?;
+            let hwnd = resolve_target_with_element(&window, &selector, cli.target.as_deref())?;
             let result = ops::find_elements(&hwnd, &selector, all)?;
             println!("{}", serde_json::to_string_pretty(&result)?);
         }
@@ -382,8 +390,7 @@ fn main() -> anyhow::Result<()> {
             pattern,
             value,
         } => {
-            let hwnd =
-                resolve_target_with_element(&window, &selector, cli.target.as_deref())?;
+            let hwnd = resolve_target_with_element(&window, &selector, cli.target.as_deref())?;
             let result = ops::invoke_pattern(&hwnd, &selector, &pattern, value.as_deref())?;
             println!("{}", serde_json::to_string_pretty(&result)?);
         }
@@ -394,8 +401,7 @@ fn main() -> anyhow::Result<()> {
             target,
             value,
         } => {
-            let hwnd =
-                resolve_target_with_element(&window, &target, cli.target.as_deref())?;
+            let hwnd = resolve_target_with_element(&window, &target, cli.target.as_deref())?;
 
             // Map action to pattern
             let pattern = match action.to_lowercase().as_str() {
@@ -460,10 +466,12 @@ fn resolve_target(
     // Priority: window_arg > flag > env var
     let query_str = window_arg
         .or(flag_target)
-        .or_else(|| std::env::var("DESKTOP_WINDOW").ok().as_deref().map(|_| {
-            // This closure doesn't work well, handle separately
-            ""
-        }))
+        .or_else(|| {
+            std::env::var("DESKTOP_WINDOW").ok().as_deref().map(|_| {
+                // This closure doesn't work well, handle separately
+                ""
+            })
+        })
         .ok_or_else(|| {
             anyhow::anyhow!(
                 "No window specified. Use a window query or set DESKTOP_WINDOW env var.\n\
@@ -473,8 +481,7 @@ fn resolve_target(
 
     // Check env var if nothing else set
     let query_str = if query_str.is_empty() {
-        std::env::var("DESKTOP_WINDOW")
-            .map_err(|_| anyhow::anyhow!("No window specified"))?
+        std::env::var("DESKTOP_WINDOW").map_err(|_| anyhow::anyhow!("No window specified"))?
     } else {
         query_str.to_string()
     };
@@ -514,15 +521,8 @@ fn resolve_target_with_element(
         Err(targeting::ResolutionError::AmbiguousWindow { query, windows }) => {
             Err(format_ambiguous_error(&query, &windows))
         }
-        Err(targeting::ResolutionError::AmbiguousElement {
-            selector,
-            windows,
-        }) => {
-            let mut msg = format!(
-                "Found '{}' in {} windows:\n",
-                selector,
-                windows.len()
-            );
+        Err(targeting::ResolutionError::AmbiguousElement { selector, windows }) => {
+            let mut msg = format!("Found '{}' in {} windows:\n", selector, windows.len());
             for (i, w) in windows.iter().enumerate() {
                 msg.push_str(&format!(
                     "  [{}] {} - {} (hwnd:{})\n",
@@ -539,10 +539,7 @@ fn resolve_target_with_element(
     }
 }
 
-fn format_ambiguous_error(
-    query: &str,
-    windows: &[automation::types::WindowInfo],
-) -> anyhow::Error {
+fn format_ambiguous_error(query: &str, windows: &[automation::types::WindowInfo]) -> anyhow::Error {
     let mut msg = format!("Found {} windows matching '{}':\n", windows.len(), query);
     for (i, w) in windows.iter().enumerate() {
         msg.push_str(&format!(
@@ -574,10 +571,7 @@ fn extract_exe_name(exe_path: &str) -> String {
 
 fn parse_region(region: &Option<String>) -> Option<[i32; 4]> {
     region.as_ref().and_then(|r| {
-        let parts: Vec<i32> = r
-            .split(',')
-            .filter_map(|s| s.trim().parse().ok())
-            .collect();
+        let parts: Vec<i32> = r.split(',').filter_map(|s| s.trim().parse().ok()).collect();
         if parts.len() == 4 {
             Some([parts[0], parts[1], parts[2], parts[3]])
         } else {
@@ -588,10 +582,7 @@ fn parse_region(region: &Option<String>) -> Option<[i32; 4]> {
 
 fn parse_coords(coords: &Option<String>) -> Option<(i32, i32)> {
     coords.as_ref().and_then(|c| {
-        let parts: Vec<i32> = c
-            .split(',')
-            .filter_map(|s| s.trim().parse().ok())
-            .collect();
+        let parts: Vec<i32> = c.split(',').filter_map(|s| s.trim().parse().ok()).collect();
         if parts.len() == 2 {
             Some((parts[0], parts[1]))
         } else {
@@ -604,43 +595,45 @@ fn parse_coords(coords: &Option<String>) -> Option<(i32, i32)> {
 fn format_tree_text(elem: &rpc::types::UiaElement, indent: usize) -> String {
     let mut output = String::new();
     let prefix = "  ".repeat(indent);
-    
+
     // Build a compact one-line summary for this element
     // Format: [Type] "Name" #id @class [patterns] (bounds)
     let mut line = format!("{}{}", prefix, elem.control_type);
-    
+
     // Add name if present
     if !elem.name.is_empty() {
         line.push_str(&format!(" \"{}\"", elem.name));
     }
-    
+
     // Add automation_id if present and different from name
     if !elem.automation_id.is_empty() && elem.automation_id != elem.name {
         line.push_str(&format!(" #{}", elem.automation_id));
     }
-    
+
     // Add value if present
     if let Some(ref v) = elem.value {
         if !v.is_empty() && v != &elem.name {
             // Truncate long values
-            let display_val = if v.len() > 30 { 
-                format!("{}...", &v[..27]) 
-            } else { 
-                v.clone() 
+            let display_val = if v.len() > 30 {
+                format!("{}...", &v[..27])
+            } else {
+                v.clone()
             };
             line.push_str(&format!(" ={}", display_val));
         }
     }
-    
+
     // Add patterns if any actionable ones
-    let actionable: Vec<&str> = elem.patterns.iter()
+    let actionable: Vec<&str> = elem
+        .patterns
+        .iter()
         .map(|s| s.as_str())
         .filter(|p| !["Transform", "Text", "ItemContainer", "VirtualizedItem"].contains(p))
         .collect();
     if !actionable.is_empty() {
         line.push_str(&format!(" [{}]", actionable.join(",")));
     }
-    
+
     // Add offscreen/disabled markers
     if elem.is_offscreen {
         line.push_str(" (offscreen)");
@@ -648,14 +641,14 @@ fn format_tree_text(elem: &rpc::types::UiaElement, indent: usize) -> String {
     if !elem.is_enabled {
         line.push_str(" (disabled)");
     }
-    
+
     output.push_str(&line);
     output.push('\n');
-    
+
     // Recurse into children
     for child in &elem.children {
         output.push_str(&format_tree_text(child, indent + 1));
     }
-    
+
     output
 }

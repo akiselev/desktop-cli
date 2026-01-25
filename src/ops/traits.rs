@@ -86,7 +86,13 @@ pub trait DesktopPlatform {
     fn query_elements(&self, hwnd: &str, selector: &str, find_all: bool) -> Result<QueryResult>;
 
     /// Click at element or coordinates
-    fn click(&self, hwnd: &str, selector: &str, coords: Option<(i32, i32)>, button: Option<&str>) -> Result<()>;
+    fn click(
+        &self,
+        hwnd: &str,
+        selector: &str,
+        coords: Option<(i32, i32)>,
+        button: Option<&str>,
+    ) -> Result<()>;
 
     /// Type text into element
     fn type_text(&self, hwnd: &str, text: &str, selector: Option<&str>) -> Result<()>;

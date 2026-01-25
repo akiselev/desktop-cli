@@ -112,12 +112,7 @@ fn test_role_mapping_macos() {
 
 #[test]
 fn test_window_info_serialization_roundtrip() {
-    let original = common::mock_window_info(
-        "0x1234",
-        "Test Window",
-        "/usr/bin/test",
-        5678,
-    );
+    let original = common::mock_window_info("0x1234", "Test Window", "/usr/bin/test", 5678);
 
     let json = serde_json::to_string(&original).expect("Failed to serialize");
 
@@ -136,16 +131,15 @@ fn test_window_info_serialization_roundtrip() {
 
 #[test]
 fn test_window_info_serialization_optional_fields() {
-    let mut window = common::mock_window_info(
-        "0x5678",
-        "Window Without Class",
-        "/usr/bin/app",
-        9999,
-    );
+    let mut window =
+        common::mock_window_info("0x5678", "Window Without Class", "/usr/bin/app", 9999);
     window.class_name = None;
 
     let json = serde_json::to_string(&window).expect("Failed to serialize");
-    assert!(!json.contains("class_name"), "Optional None field should be omitted");
+    assert!(
+        !json.contains("class_name"),
+        "Optional None field should be omitted"
+    );
 
     let deserialized: WindowInfo = serde_json::from_str(&json).expect("Failed to deserialize");
     assert_eq!(deserialized.class_name, None);
@@ -157,14 +151,21 @@ fn test_list_windows_linux() {
     use desktop_cli::automation::linux::window::list_windows;
 
     let result = list_windows(None, None);
-    assert!(result.is_ok(), "Failed to list windows on Linux: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to list windows on Linux: {:?}",
+        result.err()
+    );
 
     let windows = result.unwrap();
     println!("Found {} windows on Linux", windows.len());
 
     if !windows.is_empty() {
         let window = &windows[0];
-        println!("First window: title='{}', exe='{}'", window.title, window.executable);
+        println!(
+            "First window: title='{}', exe='{}'",
+            window.title, window.executable
+        );
         assert!(!window.hwnd.is_empty(), "HWND should not be empty");
     }
 }
@@ -184,14 +185,21 @@ fn test_list_windows_macos() {
     use desktop_cli::automation::macos::window::list_windows;
 
     let result = list_windows(None, None);
-    assert!(result.is_ok(), "Failed to list windows on macOS: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to list windows on macOS: {:?}",
+        result.err()
+    );
 
     let windows = result.unwrap();
     println!("Found {} windows on macOS", windows.len());
 
     if !windows.is_empty() {
         let window = &windows[0];
-        println!("First window: title='{}', exe='{}'", window.title, window.executable);
+        println!(
+            "First window: title='{}', exe='{}'",
+            window.title, window.executable
+        );
         assert!(!window.hwnd.is_empty(), "HWND should not be empty");
     }
 }
@@ -220,9 +228,9 @@ fn test_mock_window_generation() {
 #[test]
 fn prop_selector_parse_index_roundtrip() {
     fn test(n: u16) -> TestResult {
-    if n == 0 {
-        return TestResult::discard();
-    }
+        if n == 0 {
+            return TestResult::discard();
+        }
 
         if n == 0 {
             return TestResult::discard();
@@ -230,9 +238,7 @@ fn prop_selector_parse_index_roundtrip() {
 
         let query_str = format!(":{}", n);
         match WindowQuery::parse(&query_str) {
-            Ok(query) => {
-                TestResult::from_bool(query.index == Some(IndexSpec::Number(n as usize)))
-            }
+            Ok(query) => TestResult::from_bool(query.index == Some(IndexSpec::Number(n as usize))),
             Err(_) => TestResult::failed(),
         }
     }
@@ -244,16 +250,18 @@ fn prop_selector_parse_index_roundtrip() {
 fn prop_selector_parse_exe_roundtrip() {
     fn test(exe: String) -> TestResult {
         let trimmed = exe.trim();
-        if trimmed.is_empty() || trimmed.contains(':') || trimmed.contains('\0') || trimmed.chars().any(|c| c.is_control()) {
+        if trimmed.is_empty()
+            || trimmed.contains(':')
+            || trimmed.contains('\0')
+            || trimmed.chars().any(|c| c.is_control())
+        {
             return TestResult::discard();
         }
         let exe = trimmed.to_string();
 
         let query_str = format!("exe:{}", exe);
         match WindowQuery::parse(&query_str) {
-            Ok(query) => {
-                TestResult::from_bool(query.exe == Some(exe.to_lowercase()))
-            }
+            Ok(query) => TestResult::from_bool(query.exe == Some(exe.to_lowercase())),
             Err(_) => TestResult::failed(),
         }
     }
@@ -265,7 +273,11 @@ fn prop_selector_parse_exe_roundtrip() {
 fn prop_selector_parse_title_roundtrip() {
     fn test(title: String) -> TestResult {
         let trimmed = title.trim();
-        if trimmed.is_empty() || trimmed.contains(':') || trimmed.contains('\0') || trimmed.chars().any(|c| c.is_control()) {
+        if trimmed.is_empty()
+            || trimmed.contains(':')
+            || trimmed.contains('\0')
+            || trimmed.chars().any(|c| c.is_control())
+        {
             return TestResult::discard();
         }
         let title = trimmed.to_string();
@@ -307,9 +319,7 @@ fn prop_selector_parse_pid_roundtrip() {
 
         let query_str = format!("pid:{}", pid);
         match WindowQuery::parse(&query_str) {
-            Ok(query) => {
-                TestResult::from_bool(query.pid == Some(pid))
-            }
+            Ok(query) => TestResult::from_bool(query.pid == Some(pid)),
             Err(_) => TestResult::failed(),
         }
     }
@@ -336,14 +346,7 @@ fn prop_selector_parse_always_succeeds_on_valid_syntax() {
 #[test]
 fn prop_selector_parse_rejects_invalid_syntax() {
     let invalid_queries = vec![
-        ":",
-        ":::",
-        "exe:",
-        "title:",
-        "hwnd:",
-        "pid:",
-        "pid:abc",
-        "hwnd:xyz",
+        ":", ":::", "exe:", "title:", "hwnd:", "pid:", "pid:abc", "hwnd:xyz",
     ];
 
     for query in invalid_queries {

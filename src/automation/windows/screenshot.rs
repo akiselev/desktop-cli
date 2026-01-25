@@ -46,7 +46,11 @@ pub fn capture_screenshot(hwnd: HWND, method: ScreenshotMethod) -> Result<Screen
 
     // If primary method fails, try fallback
     let screenshot = result.or_else(|e| {
-        tracing::warn!("Primary screenshot method {:?} failed: {}, trying fallback", method, e);
+        tracing::warn!(
+            "Primary screenshot method {:?} failed: {}, trying fallback",
+            method,
+            e
+        );
         match method {
             ScreenshotMethod::BitBlt => try_capture_printwindow(hwnd),
             ScreenshotMethod::PrintWindow => try_capture_bitblt(hwnd),
@@ -69,8 +73,9 @@ fn try_capture_printwindow(hwnd: HWND) -> Result<Screenshot> {
     // win-screenshot doesn't expose PrintWindow directly, but we can use it via the capture_window function
     // which internally falls back to PrintWindow on failure
     // For now, we'll implement a simple version
-    let screenshot = win_screenshot::capture::capture_window(hwnd.0 as isize)
-        .map_err(|e| DesktopCliError::ScreenshotError(format!("PrintWindow capture failed: {}", e)))?;
+    let screenshot = win_screenshot::capture::capture_window(hwnd.0 as isize).map_err(|e| {
+        DesktopCliError::ScreenshotError(format!("PrintWindow capture failed: {}", e))
+    })?;
 
     encode_screenshot(screenshot)
 }
@@ -117,13 +122,22 @@ mod tests {
 
     #[test]
     fn test_screenshot_method_from_str() {
-        assert!(matches!(ScreenshotMethod::from_str("bitblt"), Some(ScreenshotMethod::BitBlt)));
-        assert!(matches!(ScreenshotMethod::from_str("printwindow"), Some(ScreenshotMethod::PrintWindow)));
+        assert!(matches!(
+            ScreenshotMethod::from_str("bitblt"),
+            Some(ScreenshotMethod::BitBlt)
+        ));
+        assert!(matches!(
+            ScreenshotMethod::from_str("printwindow"),
+            Some(ScreenshotMethod::PrintWindow)
+        ));
         assert!(ScreenshotMethod::from_str("invalid").is_none());
     }
 
     #[test]
     fn test_default_screenshot_method() {
-        assert!(matches!(ScreenshotMethod::default(), ScreenshotMethod::BitBlt));
+        assert!(matches!(
+            ScreenshotMethod::default(),
+            ScreenshotMethod::BitBlt
+        ));
     }
 }

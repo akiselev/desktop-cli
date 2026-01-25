@@ -1,23 +1,25 @@
 //! AT-SPI2 accessibility tree operations
 
-use crate::error::{DesktopCliError, Result};
-use crate::rpc::types::{UiaElement, PatternResult, QueryResult};
-use crate::automation::linux::roles::map_role;
 use super::window::parse_window_id;
+use crate::automation::linux::roles::map_role;
+use crate::error::{DesktopCliError, Result};
+use crate::rpc::types::{PatternResult, QueryResult, UiaElement};
 use atspi::proxy::accessible::AccessibleProxy;
-use atspi::proxy::component::ComponentProxy;
-use atspi::proxy::value::ValueProxy;
-use atspi::proxy::text::TextProxy;
 use atspi::proxy::action::ActionProxy;
-use zbus::fdo::DBusProxy;
+use atspi::proxy::component::ComponentProxy;
+use atspi::proxy::text::TextProxy;
+use atspi::proxy::value::ValueProxy;
 use atspi::{AccessibilityConnection, CoordType, Interface, InterfaceSet, Role};
 use std::time::Duration;
+use zbus::fdo::DBusProxy;
 
 /// Connect to AT-SPI2 and get accessible window for an application matching the X11 window's PID
 ///
 /// Uses PID matching: gets the X11 window's _NET_WM_PID, then finds the AT-SPI2 application
 /// whose D-Bus connection has the same PID via org.freedesktop.DBus.GetConnectionUnixProcessID.
-async fn get_accessible_for_window(window_id: u32) -> Result<(AccessibilityConnection, String, String)> {
+async fn get_accessible_for_window(
+    window_id: u32,
+) -> Result<(AccessibilityConnection, String, String)> {
     // Get the X11 window info including PID
     let window_info = crate::automation::linux::window::get_window_info_by_id(window_id)?;
     let target_pid = window_info.pid;
@@ -29,11 +31,12 @@ async fn get_accessible_for_window(window_id: u32) -> Result<(AccessibilityConne
         )));
     }
 
-    let connection = AccessibilityConnection::new()
-        .await
-        .map_err(|e| DesktopCliError::Platform(format!(
-            "Failed to connect to AT-SPI2 service. Is the accessibility service running? Error: {}", e
-        )))?;
+    let connection = AccessibilityConnection::new().await.map_err(|e| {
+        DesktopCliError::Platform(format!(
+            "Failed to connect to AT-SPI2 service. Is the accessibility service running? Error: {}",
+            e
+        ))
+    })?;
 
     let zbus_conn = connection.connection().clone();
 
@@ -50,7 +53,9 @@ async fn get_accessible_for_window(window_id: u32) -> Result<(AccessibilityConne
         .map_err(|e| DesktopCliError::Platform(format!("Failed to set path: {}", e)))?
         .build()
         .await
-        .map_err(|e| DesktopCliError::Platform(format!("Failed to build accessible proxy: {}", e)))?;
+        .map_err(|e| {
+            DesktopCliError::Platform(format!("Failed to build accessible proxy: {}", e))
+        })?;
 
     let children = registry_accessible.get_children().await.map_err(|e| {
         DesktopCliError::Platform(format!("Failed to get desktop applications: {}", e))
@@ -59,7 +64,8 @@ async fn get_accessible_for_window(window_id: u32) -> Result<(AccessibilityConne
     // Find the app whose D-Bus connection has the matching PID
     for child_ref in &children {
         // Get PID of this AT-SPI2 app's D-Bus connection
-        let app_pid = dbus_proxy.get_connection_unix_process_id(child_ref.name.as_str().try_into().unwrap())
+        let app_pid = dbus_proxy
+            .get_connection_unix_process_id(child_ref.name.as_str().try_into().unwrap())
             .await
             .ok();
 
@@ -78,11 +84,19 @@ async fn get_accessible_for_window(window_id: u32) -> Result<(AccessibilityConne
                             if !app_children.is_empty() {
                                 // Return first window
                                 let window_ref = &app_children[0];
-                                return Ok((connection, window_ref.name.to_string(), window_ref.path.to_string()));
+                                return Ok((
+                                    connection,
+                                    window_ref.name.to_string(),
+                                    window_ref.path.to_string(),
+                                ));
                             }
                         }
                         // No windows, return app root
-                        return Ok((connection, child_ref.name.to_string(), "/org/a11y/atspi/accessible/root".to_string()));
+                        return Ok((
+                            connection,
+                            child_ref.name.to_string(),
+                            "/org/a11y/atspi/accessible/root".to_string(),
+                        ));
                     }
                 }
             }
@@ -130,7 +144,11 @@ async fn extract_element_value<'a>(
 
         if let Some(vb) = value_builder {
             if let Ok(value_proxy) = vb.build().await {
-                return value_proxy.current_value().await.ok().map(|v| v.to_string());
+                return value_proxy
+                    .current_value()
+                    .await
+                    .ok()
+                    .map(|v| v.to_string());
             }
         }
     } else if interfaces.contains(Interface::Text) {
@@ -187,13 +205,18 @@ async fn traverse_element<'a>(
     let role = accessible.get_role().await.unwrap_or(Role::Unknown);
     let role_str = format!("{:?}", role);
 
-    let (x, y, width, height) = build_component_proxy(accessible).await.unwrap_or((0, 0, 0, 0));
+    let (x, y, width, height) = build_component_proxy(accessible)
+        .await
+        .unwrap_or((0, 0, 0, 0));
 
     let state_set = accessible.get_state().await.unwrap_or_default();
     let is_enabled = state_set.contains(atspi::State::Enabled);
     let is_offscreen = !state_set.contains(atspi::State::Visible);
 
-    let interfaces = accessible.get_interfaces().await.unwrap_or(InterfaceSet::empty());
+    let interfaces = accessible
+        .get_interfaces()
+        .await
+        .unwrap_or(InterfaceSet::empty());
     let patterns = detect_patterns(&interfaces);
     let value = extract_element_value(accessible, &interfaces).await;
 
@@ -210,7 +233,9 @@ async fn traverse_element<'a>(
 
                 if let Some(cb) = child_builder {
                     if let Ok(child_acc) = cb.build().await {
-                        if let Ok(child_elem) = Box::pin(traverse_element(&child_acc, depth + 1, max_depth)).await {
+                        if let Ok(child_elem) =
+                            Box::pin(traverse_element(&child_acc, depth + 1, max_depth)).await
+                        {
                             children.push(child_elem);
                         }
                     }
@@ -305,7 +330,10 @@ fn element_matches_selector(element: &UiaElement, selector: &str) -> bool {
         element.class_name == class
     } else {
         element.control_type.to_lowercase() == selector.to_lowercase()
-            || element.name.to_lowercase().contains(&selector.to_lowercase())
+            || element
+                .name
+                .to_lowercase()
+                .contains(&selector.to_lowercase())
     }
 }
 
@@ -314,9 +342,9 @@ pub fn element_exists(window_id: &str, selector: &str) -> Result<bool> {
     let timeout = Duration::from_millis(500);
 
     with_atspi_runtime(async {
-        match tokio::time::timeout(timeout, async {
-            find_elements(window_id, selector, false)
-        }).await {
+        match tokio::time::timeout(timeout, async { find_elements(window_id, selector, false) })
+            .await
+        {
             Ok(Ok(results)) => Ok(!results.is_empty()),
             Ok(Err(e)) => Err(e),
             Err(_) => Ok(false),
@@ -352,7 +380,10 @@ pub fn invoke_pattern(
         find_matching_elements(&root, selector, false, &mut results);
 
         if results.is_empty() {
-            return Ok(PatternResult::err(format!("No element found matching: {}", selector)));
+            return Ok(PatternResult::err(format!(
+                "No element found matching: {}",
+                selector
+            )));
         }
 
         let _element = &results[0];
@@ -361,15 +392,20 @@ pub fn invoke_pattern(
             "invoke" => {
                 let action_proxy = ActionProxy::builder(accessible.connection())
                     .destination(accessible.destination())
-                    .map_err(|e| DesktopCliError::Platform(format!("Failed to build action proxy: {}", e)))?
+                    .map_err(|e| {
+                        DesktopCliError::Platform(format!("Failed to build action proxy: {}", e))
+                    })?
                     .path(accessible.path())
                     .map_err(|e| DesktopCliError::Platform(format!("Failed to set path: {}", e)))?
                     .build()
                     .await
-                    .map_err(|e| DesktopCliError::Platform(format!("Failed to build action proxy: {}", e)))?;
+                    .map_err(|e| {
+                        DesktopCliError::Platform(format!("Failed to build action proxy: {}", e))
+                    })?;
 
-                action_proxy.do_action(0).await
-                    .map_err(|e| DesktopCliError::Platform(format!("Failed to invoke action: {}", e)))?;
+                action_proxy.do_action(0).await.map_err(|e| {
+                    DesktopCliError::Platform(format!("Failed to invoke action: {}", e))
+                })?;
 
                 Ok(PatternResult::ok())
             }
@@ -377,25 +413,41 @@ pub fn invoke_pattern(
                 if let Some(value_str) = action {
                     let value_proxy = ValueProxy::builder(accessible.connection())
                         .destination(accessible.destination())
-                        .map_err(|e| DesktopCliError::Platform(format!("Failed to build value proxy: {}", e)))?
+                        .map_err(|e| {
+                            DesktopCliError::Platform(format!("Failed to build value proxy: {}", e))
+                        })?
                         .path(accessible.path())
-                        .map_err(|e| DesktopCliError::Platform(format!("Failed to set path: {}", e)))?
+                        .map_err(|e| {
+                            DesktopCliError::Platform(format!("Failed to set path: {}", e))
+                        })?
                         .build()
                         .await
-                        .map_err(|e| DesktopCliError::Platform(format!("Failed to build value proxy: {}", e)))?;
+                        .map_err(|e| {
+                            DesktopCliError::Platform(format!("Failed to build value proxy: {}", e))
+                        })?;
 
-                    let value_f64 = value_str.parse::<f64>()
+                    let value_f64 = value_str
+                        .parse::<f64>()
                         .map_err(|e| DesktopCliError::Platform(format!("Invalid value: {}", e)))?;
 
-                    value_proxy.set_current_value(value_f64).await
-                        .map_err(|e| DesktopCliError::Platform(format!("Failed to set value: {}", e)))?;
+                    value_proxy
+                        .set_current_value(value_f64)
+                        .await
+                        .map_err(|e| {
+                            DesktopCliError::Platform(format!("Failed to set value: {}", e))
+                        })?;
 
                     Ok(PatternResult::ok())
                 } else {
-                    Ok(PatternResult::err("Value pattern requires action parameter".to_string()))
+                    Ok(PatternResult::err(
+                        "Value pattern requires action parameter".to_string(),
+                    ))
                 }
             }
-            _ => Ok(PatternResult::err(format!("Pattern not supported: {}", pattern))),
+            _ => Ok(PatternResult::err(format!(
+                "Pattern not supported: {}",
+                pattern
+            ))),
         }
     })
 }
@@ -424,9 +476,7 @@ fn format_summary(element: &UiaElement, indent: usize) -> String {
 
     result.push_str(&format!(
         "{}{} [{}]",
-        prefix,
-        element.control_type,
-        element.name
+        prefix, element.control_type, element.name
     ));
 
     if let Some(ref value) = element.value {
@@ -435,8 +485,7 @@ fn format_summary(element: &UiaElement, indent: usize) -> String {
 
     result.push_str(&format!(
         " ({},{} {}x{})\n",
-        element.bounds[0], element.bounds[1],
-        element.bounds[2], element.bounds[3]
+        element.bounds[0], element.bounds[1], element.bounds[2], element.bounds[3]
     ));
 
     for child in &element.children {
@@ -450,8 +499,10 @@ fn format_summary(element: &UiaElement, indent: usize) -> String {
 pub fn query_elements(window_id: &str, selector: &str, find_all: bool) -> Result<QueryResult> {
     let elements = find_elements(window_id, selector, find_all)?;
 
-    let matches = elements.iter().enumerate().map(|(i, elem)| {
-        crate::rpc::types::ElementRef {
+    let matches = elements
+        .iter()
+        .enumerate()
+        .map(|(i, elem)| crate::rpc::types::ElementRef {
             id: format!("elem_{}", i),
             role: elem.control_type.clone(),
             label: elem.name.clone(),
@@ -461,8 +512,8 @@ pub fn query_elements(window_id: &str, selector: &str, find_all: bool) -> Result
                 None
             },
             selector: format!("#{}", elem.name),
-        }
-    }).collect();
+        })
+        .collect();
 
     Ok(QueryResult {
         count: elements.len(),

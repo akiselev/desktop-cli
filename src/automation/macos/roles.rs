@@ -18,5 +18,6 @@ pub fn map_role(ax_role: &str) -> String {
         "AXTable" => "Table",
         "AXCell" => "DataItem",
         _ => "Custom",
-    }.to_string()
+    }
+    .to_string()
 }

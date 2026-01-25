@@ -99,7 +99,10 @@ fn test_window_enumeration() {
 
     // Check if GTK test app exists
     if !std::path::Path::new(GTK_TEST_APP_PATH).exists() {
-        eprintln!("Skipping test: GTK test app not built at {}", GTK_TEST_APP_PATH);
+        eprintln!(
+            "Skipping test: GTK test app not built at {}",
+            GTK_TEST_APP_PATH
+        );
         return;
     }
 
@@ -119,7 +122,10 @@ fn test_window_enumeration() {
     let _ = child.kill();
     let _ = child.wait();
 
-    assert!(hwnd.is_some(), "GTK test app window not found in window list");
+    assert!(
+        hwnd.is_some(),
+        "GTK test app window not found in window list"
+    );
 }
 
 /// Test that dump_tree returns elements from the GTK test app

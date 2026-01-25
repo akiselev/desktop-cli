@@ -221,7 +221,11 @@ fn parse_attribute(content: &str) -> Option<AttributeMatcher> {
     };
 
     let name = name.trim().to_string();
-    let value = value.trim().trim_matches('"').trim_matches('\'').to_string();
+    let value = value
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .to_string();
 
     if name.is_empty() {
         return None;
