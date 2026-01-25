@@ -57,7 +57,10 @@ fn test_invalid_hwnd_returns_error() {
 
     // This should return an error quickly, not hang
     let result = desktop_cli::automation::linux::window::get_window_info_by_id(0xDEADBEEF);
-    println!("test_invalid_hwnd_returns_error: got result: {:?}", result.is_err());
+    println!(
+        "test_invalid_hwnd_returns_error: got result: {:?}",
+        result.is_err()
+    );
 
     // We expect an error for non-existent window
     assert!(result.is_err(), "Should error for invalid window ID");
