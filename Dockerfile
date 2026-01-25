@@ -33,7 +33,7 @@ RUN cargo build --release && \
 # =============================================================================
 # RUNTIME STAGE
 # =============================================================================
-FROM ubuntu:22.04 AS runtime
+FROM ubuntu:24.04 AS runtime
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
