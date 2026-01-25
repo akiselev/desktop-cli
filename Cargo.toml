@@ -64,7 +64,7 @@ uiautomation = "0.24"
 [target.'cfg(target_os = "macos")'.dependencies]
 accessibility-sys = "0.1"
 enigo = "0.2"
-xcap = "0.0.13"
+xcap = "0.8"
 
 # Linux Automation (Linux only)
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -72,7 +72,7 @@ atspi = { version = "0.21", default-features = false, features = ["tokio", "conn
 zbus = { version = "3.15", default-features = false, features = ["tokio"] }
 x11rb = "0.13"
 enigo = "0.2"
-xcap = "0.0.13"
+xcap = "0.8"
 
 [dev-dependencies]
 quickcheck = "1.0"
