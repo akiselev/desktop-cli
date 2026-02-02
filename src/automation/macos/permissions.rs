@@ -9,8 +9,8 @@ pub fn check_accessibility_permission() -> bool {
     use core_foundation::string::CFString;
 
     unsafe {
-        // kAXTrustedCheckOptionPrompt is a &str in accessibility-sys 0.1
-        let key = CFString::new(accessibility_sys::kAXTrustedCheckOptionPrompt);
+        // kAXTrustedCheckOptionPrompt is a CFStringRef in accessibility-sys 0.1
+        let key = CFString::wrap_under_get_rule(accessibility_sys::kAXTrustedCheckOptionPrompt);
         let value = CFBoolean::true_value();
 
         let options = CFDictionary::from_CFType_pairs(&[(

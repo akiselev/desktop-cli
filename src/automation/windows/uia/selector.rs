@@ -112,20 +112,28 @@ impl Selector {
                 }
                 // Automation ID
                 '#' if !in_bracket => {
-                    let id: String = chars
-                        .by_ref()
-                        .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
-                        .collect();
+                    let mut id = String::new();
+                    while let Some(&next) = chars.peek() {
+                        if next.is_alphanumeric() || next == '_' || next == '-' {
+                            id.push(chars.next().unwrap());
+                        } else {
+                            break;
+                        }
+                    }
                     if !id.is_empty() {
                         current.automation_id = Some(id);
                     }
                 }
                 // Class name
                 '.' if !in_bracket => {
-                    let class: String = chars
-                        .by_ref()
-                        .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
-                        .collect();
+                    let mut class = String::new();
+                    while let Some(&next) = chars.peek() {
+                        if next.is_alphanumeric() || next == '_' || next == '-' {
+                            class.push(chars.next().unwrap());
+                        } else {
+                            break;
+                        }
+                    }
                     if !class.is_empty() {
                         current.class_name = Some(class);
                     }
