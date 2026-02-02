@@ -64,6 +64,7 @@ uiautomation = "0.24"
 accessibility-sys = "0.1"
 core-graphics = "0.23"
 core-foundation = "0.9"
+core-foundation-sys = "0.8"
 enigo = "0.2"
 
 # Linux Automation (Linux only)
