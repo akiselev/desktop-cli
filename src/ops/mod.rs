@@ -33,6 +33,11 @@ mod macos_ops;
 #[cfg(target_os = "macos")]
 pub use macos_ops::MacOSPlatform as Platform;
 #[cfg(target_os = "macos")]
+pub use macos_ops::{
+    click, dump_tree, element_exists, find_elements, get_summary, get_window_by_hwnd,
+    invoke_pattern, list_windows, query_elements, scroll, send_keys, take_screenshot, type_text,
+};
+#[cfg(target_os = "macos")]
 pub use macos_ops::{MacOSPlatform, OpsError, Result};
 
 #[cfg(target_os = "linux")]

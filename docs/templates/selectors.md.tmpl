@@ -1,0 +1,91 @@
+# Selectors Tutorial
+
+Desktop CLI uses an enhanced selector syntax designed for LLM agents.
+This tutorial demonstrates each selector type against a GTK test application.
+
+## Role Selectors
+
+The `@role` selector finds elements by their UI role:
+
+{{COMMAND:desktop query :1 "@button" --all}}
+{{OUTPUT}}
+
+Common roles: `@button`, `@input`, `@menu`, `@tab`, `@list`, `@tree`, `@text`, `@checkbox`.
+
+## String Matching
+
+### Exact Match
+
+Find elements with an exact name:
+
+{{COMMAND:desktop query :1 "@button 'Click Me'"}}
+{{OUTPUT}}
+
+### Wildcard Match
+
+Use `*` for wildcard matching:
+
+{{COMMAND:desktop query :1 "@button 'Click*'" --all}}
+{{OUTPUT}}
+
+## ID Selectors
+
+Find elements by their automation ID using `#`:
+
+{{COMMAND:desktop query :1 "#btnClickMe"}}
+{{OUTPUT}}
+
+## Pseudo-Selectors
+
+### :first and :last
+
+Get the first or last matching element:
+
+{{COMMAND:desktop query :1 "@button:first"}}
+{{OUTPUT}}
+
+### :enabled and :disabled
+
+Filter by enabled/disabled state:
+
+{{COMMAND:desktop query :1 "@button:enabled" --all}}
+{{OUTPUT}}
+
+### :visible
+
+Filter to only visible (on-screen) elements:
+
+{{COMMAND:desktop query :1 "@button:visible" --all}}
+{{OUTPUT}}
+
+### :nth(N)
+
+Select the Nth matching element (1-based):
+
+{{COMMAND:desktop query :1 "@button:nth(2)"}}
+{{OUTPUT}}
+
+## Combining Selectors
+
+Combine role, name, and pseudo-selectors:
+
+{{COMMAND:desktop query :1 "@button:enabled 'Click*'" --all}}
+{{OUTPUT}}
+
+## Common Patterns
+
+| Goal | Selector |
+|------|----------|
+| Any button | `@button` |
+| Button by name | `@button "Save"` |
+| First input field | `@input:first` |
+| Element by ID | `#myElementId` |
+| Enabled buttons | `@button:enabled` |
+| Second tab | `@tab:nth(2)` |
+| Visible inputs | `@input:visible` |
+
+## Next Steps
+
+- See the [Selector Reference](../reference/selectors.md) for complete syntax
+- Learn about [Patterns](../reference/patterns.md) for interacting with elements
+- Try the [VS Code Showcase](showcase.md) for real-world selector usage

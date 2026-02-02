@@ -16,9 +16,9 @@ use targeting::{
     resolve_with_element, WindowQuery,
 };
 
-/// Desktop CLI - Control desktop applications through UI Automation
+/// Desktop CLI - Control desktop applications through accessibility APIs
 ///
-/// A Windows desktop automation tool optimized for LLM agents.
+/// A cross-platform desktop automation tool optimized for LLM agents.
 #[derive(Parser, Debug)]
 #[command(name = "desktop", author, version, about, long_about = None)]
 struct Cli {

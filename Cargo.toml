@@ -3,15 +3,15 @@ name = "desktop-cli"
 version = "0.1.0"
 edition = "2021"
 
-description = "Desktop automation CLI with UI Automation (UIA) support for Windows. Query UI element trees, find elements with CSS-style selectors, and interact via accessibility patterns."
+description = "Cross-platform desktop automation CLI for Windows, Linux, and macOS. Query UI element trees, find elements with CSS-style selectors, and interact via accessibility patterns. Optimized for LLM agents."
 license = "GPL-3.0-only"
 repository = "https://github.com/akiselev/desktop-cli"
 homepage = "https://github.com/akiselev/desktop-cli"
-documentation = "https://docs.rs/desktop-cli"
+documentation = "https://akiselev.github.io/desktop-cli/"
 readme = "README.md"
 authors = ["Alexander Kiselev <alex@akiselev.com>"]
-keywords = ["automation", "accessibility", "windows", "uiautomation", "rpc", "llm"]
-categories = ["command-line-utilities", "accessibility", "api-bindings", "os::windows-apis"]
+keywords = ["automation", "accessibility", "desktop", "cross-platform", "llm"]
+categories = ["command-line-utilities", "accessibility", "api-bindings"]
 
 [[bin]]
 name = "desktop"

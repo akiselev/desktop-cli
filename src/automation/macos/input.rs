@@ -3,21 +3,25 @@
 use crate::error::Result;
 
 #[cfg(target_os = "macos")]
+use crate::error::DesktopCliError;
+#[cfg(target_os = "macos")]
+use enigo::{Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
+
+#[cfg(target_os = "macos")]
 pub fn click_at_coords(x: i32, y: i32) -> Result<()> {
-    // TODO: Implement using enigo crate or Core Graphics CGEventCreateMouseEvent
-    //
-    // Steps:
-    // 1. Check permissions using super::permissions::check_accessibility_permission()
-    // 2. Create mouse event at (x, y) coordinates
-    // 3. Post mouse down event (left button)
-    // 4. Post mouse up event (left button)
-    // 5. Handle any errors from event posting
-    //
-    // Alternative: Use enigo::Enigo with Settings::MacOS
-    let _ = (x, y);
-    Err(crate::error::DesktopCliError::Platform(
-        "macOS click not yet implemented. Grant accessibility permissions in System Preferences > Privacy & Security > Accessibility.".to_string()
-    ))
+    let mut enigo = Enigo::new(&Settings::default()).map_err(|e| {
+        DesktopCliError::AutomationError(format!("Failed to create enigo instance: {}", e))
+    })?;
+
+    enigo
+        .move_mouse(x, y, Coordinate::Abs)
+        .map_err(|e| DesktopCliError::AutomationError(format!("Failed to move mouse: {}", e)))?;
+
+    enigo
+        .button(Button::Left, Direction::Click)
+        .map_err(|e| DesktopCliError::AutomationError(format!("Failed to click: {}", e)))?;
+
+    Ok(())
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -29,22 +33,15 @@ pub fn click_at_coords(_x: i32, _y: i32) -> Result<()> {
 
 #[cfg(target_os = "macos")]
 pub fn type_text(text: &str) -> Result<()> {
-    // TODO: Implement using enigo crate or Core Graphics CGEventCreateKeyboardEvent
-    //
-    // Steps:
-    // 1. Check permissions using super::permissions::check_accessibility_permission()
-    // 2. For each character in text:
-    //    - Convert char to CGKeyCode
-    //    - Create key down event
-    //    - Create key up event
-    //    - Post both events
-    // 3. Handle special characters and modifiers
-    //
-    // Alternative: Use enigo::Enigo::text() method
-    let _ = text;
-    Err(crate::error::DesktopCliError::Platform(
-        "macOS type_text not yet implemented. Grant accessibility permissions in System Preferences > Privacy & Security > Accessibility.".to_string()
-    ))
+    let mut enigo = Enigo::new(&Settings::default()).map_err(|e| {
+        DesktopCliError::AutomationError(format!("Failed to create enigo instance: {}", e))
+    })?;
+
+    enigo
+        .text(text)
+        .map_err(|e| DesktopCliError::AutomationError(format!("Failed to type text: {}", e)))?;
+
+    Ok(())
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -55,22 +52,48 @@ pub fn type_text(_text: &str) -> Result<()> {
 }
 
 #[cfg(target_os = "macos")]
-pub fn send_keys(keys: &str) -> Result<()> {
-    // TODO: Implement key combination handling (Cmd+C, etc.)
-    //
-    // Steps:
-    // 1. Check permissions using super::permissions::check_accessibility_permission()
-    // 2. Parse keys string for modifiers (Cmd, Ctrl, Alt, Shift)
-    // 3. Create modifier flag mask (kCGEventFlagMaskCommand, etc.)
-    // 4. Create key event with modifiers
-    // 5. Post key down and key up events
-    // 6. Handle key combinations like "Cmd+C", "Ctrl+Alt+Delete"
-    //
-    // Alternative: Use enigo::Enigo::key() with Key enum
-    let _ = keys;
-    Err(crate::error::DesktopCliError::Platform(
-        "macOS send_keys not yet implemented. Grant accessibility permissions in System Preferences > Privacy & Security > Accessibility.".to_string()
-    ))
+pub fn send_keys(combo: &str) -> Result<()> {
+    let mut enigo = Enigo::new(&Settings::default()).map_err(|e| {
+        DesktopCliError::AutomationError(format!("Failed to create enigo instance: {}", e))
+    })?;
+
+    let keys: Vec<&str> = combo.split('+').map(|s| s.trim()).collect();
+
+    let mut modifiers = Vec::new();
+    let mut main_key = None;
+
+    for key_str in &keys {
+        let key_lower = key_str.to_lowercase();
+        match key_lower.as_str() {
+            "ctrl" | "control" => modifiers.push(Key::Control),
+            "alt" => modifiers.push(Key::Alt),
+            "shift" => modifiers.push(Key::Shift),
+            "meta" | "super" | "win" | "cmd" => modifiers.push(Key::Meta),
+            _ => {
+                main_key = Some(parse_key(key_str)?);
+            }
+        }
+    }
+
+    for modifier in &modifiers {
+        enigo.key(*modifier, Direction::Press).map_err(|e| {
+            DesktopCliError::AutomationError(format!("Failed to press modifier: {}", e))
+        })?;
+    }
+
+    if let Some(key) = main_key {
+        enigo
+            .key(key, Direction::Click)
+            .map_err(|e| DesktopCliError::AutomationError(format!("Failed to press key: {}", e)))?;
+    }
+
+    for modifier in modifiers.iter().rev() {
+        enigo.key(*modifier, Direction::Release).map_err(|e| {
+            DesktopCliError::AutomationError(format!("Failed to release modifier: {}", e))
+        })?;
+    }
+
+    Ok(())
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -82,22 +105,26 @@ pub fn send_keys(_keys: &str) -> Result<()> {
 
 #[cfg(target_os = "macos")]
 pub fn scroll(direction: &str, amount: i32) -> Result<()> {
-    // TODO: Implement scrolling using Core Graphics CGEventCreateScrollWheelEvent
-    //
-    // Steps:
-    // 1. Check permissions using super::permissions::check_accessibility_permission()
-    // 2. Parse direction ("up", "down", "left", "right")
-    // 3. Create scroll wheel event with:
-    //    - kCGScrollEventUnitLine or kCGScrollEventUnitPixel
-    //    - amount parameter converted to scroll delta
-    // 4. Post the scroll event
-    // 5. Handle errors from event posting
-    //
-    // Alternative: Use enigo::Enigo with scroll method if available
-    let _ = (direction, amount);
-    Err(crate::error::DesktopCliError::Platform(
-        "macOS scroll not yet implemented. Grant accessibility permissions in System Preferences > Privacy & Security > Accessibility.".to_string()
-    ))
+    let mut enigo = Enigo::new(&Settings::default()).map_err(|e| {
+        DesktopCliError::AutomationError(format!("Failed to create enigo instance: {}", e))
+    })?;
+
+    let scroll_amount = match direction.to_lowercase().as_str() {
+        "up" => amount,
+        "down" => -amount,
+        _ => {
+            return Err(DesktopCliError::AutomationError(format!(
+                "Invalid scroll direction: {}",
+                direction
+            )))
+        }
+    };
+
+    enigo
+        .scroll(scroll_amount, enigo::Axis::Vertical)
+        .map_err(|e| DesktopCliError::AutomationError(format!("Failed to scroll: {}", e)))?;
+
+    Ok(())
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -105,4 +132,74 @@ pub fn scroll(_direction: &str, _amount: i32) -> Result<()> {
     Err(crate::error::DesktopCliError::Platform(
         "macOS not supported on this platform".to_string(),
     ))
+}
+
+#[cfg(target_os = "macos")]
+fn parse_key(key_str: &str) -> Result<Key> {
+    let key_lower = key_str.to_lowercase();
+
+    match key_lower.as_str() {
+        "a" => Ok(Key::Unicode('a')),
+        "b" => Ok(Key::Unicode('b')),
+        "c" => Ok(Key::Unicode('c')),
+        "d" => Ok(Key::Unicode('d')),
+        "e" => Ok(Key::Unicode('e')),
+        "f" => Ok(Key::Unicode('f')),
+        "g" => Ok(Key::Unicode('g')),
+        "h" => Ok(Key::Unicode('h')),
+        "i" => Ok(Key::Unicode('i')),
+        "j" => Ok(Key::Unicode('j')),
+        "k" => Ok(Key::Unicode('k')),
+        "l" => Ok(Key::Unicode('l')),
+        "m" => Ok(Key::Unicode('m')),
+        "n" => Ok(Key::Unicode('n')),
+        "o" => Ok(Key::Unicode('o')),
+        "p" => Ok(Key::Unicode('p')),
+        "q" => Ok(Key::Unicode('q')),
+        "r" => Ok(Key::Unicode('r')),
+        "s" => Ok(Key::Unicode('s')),
+        "t" => Ok(Key::Unicode('t')),
+        "u" => Ok(Key::Unicode('u')),
+        "v" => Ok(Key::Unicode('v')),
+        "w" => Ok(Key::Unicode('w')),
+        "x" => Ok(Key::Unicode('x')),
+        "y" => Ok(Key::Unicode('y')),
+        "z" => Ok(Key::Unicode('z')),
+        "enter" | "return" => Ok(Key::Return),
+        "space" => Ok(Key::Space),
+        "tab" => Ok(Key::Tab),
+        "escape" | "esc" => Ok(Key::Escape),
+        "backspace" => Ok(Key::Backspace),
+        "delete" | "del" => Ok(Key::Delete),
+        "up" | "uparrow" => Ok(Key::UpArrow),
+        "down" | "downarrow" => Ok(Key::DownArrow),
+        "left" | "leftarrow" => Ok(Key::LeftArrow),
+        "right" | "rightarrow" => Ok(Key::RightArrow),
+        "home" => Ok(Key::Home),
+        "end" => Ok(Key::End),
+        "pageup" => Ok(Key::PageUp),
+        "pagedown" => Ok(Key::PageDown),
+        "f1" => Ok(Key::F1),
+        "f2" => Ok(Key::F2),
+        "f3" => Ok(Key::F3),
+        "f4" => Ok(Key::F4),
+        "f5" => Ok(Key::F5),
+        "f6" => Ok(Key::F6),
+        "f7" => Ok(Key::F7),
+        "f8" => Ok(Key::F8),
+        "f9" => Ok(Key::F9),
+        "f10" => Ok(Key::F10),
+        "f11" => Ok(Key::F11),
+        "f12" => Ok(Key::F12),
+        _ => {
+            if key_str.len() == 1 {
+                Ok(Key::Unicode(key_str.chars().next().unwrap()))
+            } else {
+                Err(DesktopCliError::AutomationError(format!(
+                    "Unknown key: {}",
+                    key_str
+                )))
+            }
+        }
+    }
 }

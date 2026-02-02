@@ -1,0 +1,66 @@
+# Getting Started with Desktop CLI
+
+This tutorial covers the basics of using desktop-cli to automate desktop applications.
+All examples run against a GTK test application in a Docker container.
+
+## Listing Windows
+
+First, discover what windows are available:
+
+{{COMMAND:desktop windows}}
+{{OUTPUT}}
+
+## Getting a UI Summary
+
+Get a compact summary of the window's UI elements:
+
+{{COMMAND:desktop summary :1}}
+{{OUTPUT}}
+
+The summary shows categorized elements: actions (buttons, inputs), navigation (menus, tabs), and content.
+
+## Finding Elements
+
+Use the query command to find specific elements:
+
+{{COMMAND:desktop query :1 "@button" --all}}
+{{OUTPUT}}
+
+## Clicking a Button
+
+Click a button by role and name:
+
+{{COMMAND:desktop click :1 "@button 'Click Me'"}}
+{{OUTPUT}}
+
+Verify the result:
+
+{{COMMAND:desktop summary :1}}
+{{OUTPUT}}
+
+## Typing Text
+
+Type text into an input field:
+
+{{COMMAND:desktop type :1 "@input" --value "Hello from desktop-cli"}}
+{{OUTPUT}}
+
+## Sending Key Combinations
+
+Send keyboard shortcuts:
+
+{{COMMAND:desktop keys :1 "ctrl+a"}}
+{{OUTPUT}}
+
+## The Do Command
+
+The `do` command combines finding an element and performing an action:
+
+{{COMMAND:desktop do :1 click "@button 'Click Me'"}}
+{{OUTPUT}}
+
+## Next Steps
+
+- Learn about [Selectors](selectors.md) for precise element targeting
+- See the [Command Reference](../reference/commands.md) for all options
+- Try the [VS Code Showcase](showcase.md) for a real-world example

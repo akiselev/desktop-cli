@@ -95,6 +95,17 @@ echo "=== Environment ==="
 echo "DISPLAY=$DISPLAY"
 echo "PWD=$(pwd)"
 
+# Start D-Bus session for AT-SPI2
+eval $(dbus-launch --sh-syntax)
+export DBUS_SESSION_BUS_ADDRESS
+
+echo "=== D-Bus Session ==="
+echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS"
+
+# Start AT-SPI2 registry
+/usr/libexec/at-spi-bus-launcher --launch-immediately &
+sleep 1
+
 # Verify X11 is working
 if [ -n "$DISPLAY" ]; then
     echo "=== Testing X11 connection ==="

@@ -1,0 +1,60 @@
+# Tutorial generation Dockerfile
+# Builds on the desktop-cli-test image to generate tutorial markdown
+# from templates by executing commands against a GTK test app.
+#
+# Usage:
+#   docker build -t desktop-cli-test .
+#   docker build -f Dockerfile.tutorial -t desktop-cli-tutorial .
+#   docker run --rm desktop-cli-tutorial
+
+FROM desktop-cli-test:latest
+
+# Copy tutorial generation scripts and templates
+COPY scripts/generate-tutorials.sh /app/scripts/generate-tutorials.sh
+COPY docs/templates /app/docs/templates
+
+RUN chmod +x /app/scripts/generate-tutorials.sh
+
+# Create output directory
+RUN mkdir -p /app/docs/src/tutorials
+
+# Override entrypoint to run tutorial generation instead of tests
+COPY <<'EOF' /app/run-tutorials.sh
+#!/bin/bash
+set -ex
+
+echo "=== Starting tutorial generation ==="
+
+# Start D-Bus session for AT-SPI2
+eval $(dbus-launch --sh-syntax)
+export DBUS_SESSION_BUS_ADDRESS
+
+# Start AT-SPI2 registry
+/usr/libexec/at-spi-bus-launcher --launch-immediately &
+sleep 1
+
+# Start GTK test app in background
+if [ -f /app/tests/fixtures/gtk_test_app/gtk_test_app ]; then
+    /app/tests/fixtures/gtk_test_app/gtk_test_app &
+    GTK_APP_PID=$!
+    sleep 2
+    echo "GTK test app started (PID: $GTK_APP_PID)"
+fi
+
+# Generate tutorials
+cd /app
+/app/scripts/generate-tutorials.sh docs/templates docs/src/tutorials
+
+echo "=== Tutorial generation complete ==="
+
+# Output generated files
+for f in /app/docs/src/tutorials/*.md; do
+    echo "--- Generated: $f ---"
+    cat "$f"
+    echo ""
+done
+EOF
+RUN chmod +x /app/run-tutorials.sh
+
+ENTRYPOINT ["/bin/bash", "-c", "exec xvfb-run --auto-servernum --server-args='-screen 0 1024x768x24' /app/run-tutorials.sh"]
+CMD []

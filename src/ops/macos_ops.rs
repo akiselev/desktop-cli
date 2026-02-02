@@ -87,22 +87,28 @@ pub fn query_elements(_hwnd: &str, _selector: &str, _find_all: bool) -> Result<Q
 pub fn click(
     _hwnd: &str,
     _selector: &str,
-    _coords: Option<(i32, i32)>,
+    coords: Option<(i32, i32)>,
     _button: Option<&str>,
 ) -> Result<()> {
-    platform_not_supported()
+    if let Some((x, y)) = coords {
+        macos::input::click_at_coords(x, y).map_err(|e| OpsError(e.to_string()))
+    } else {
+        Err(OpsError(
+            "Coordinates required for macOS click".to_string(),
+        ))
+    }
 }
 
-pub fn type_text(_hwnd: &str, _text: &str, _selector: Option<&str>) -> Result<()> {
-    platform_not_supported()
+pub fn type_text(_hwnd: &str, text: &str, _selector: Option<&str>) -> Result<()> {
+    macos::input::type_text(text).map_err(|e| OpsError(e.to_string()))
 }
 
-pub fn send_keys(_keys: &str) -> Result<()> {
-    platform_not_supported()
+pub fn send_keys(keys: &str) -> Result<()> {
+    macos::input::send_keys(keys).map_err(|e| OpsError(e.to_string()))
 }
 
-pub fn scroll(_direction: &str, _amount: i32) -> Result<()> {
-    platform_not_supported()
+pub fn scroll(direction: &str, amount: i32) -> Result<()> {
+    macos::input::scroll(direction, amount).map_err(|e| OpsError(e.to_string()))
 }
 
 impl DesktopPlatform for MacOSPlatform {
