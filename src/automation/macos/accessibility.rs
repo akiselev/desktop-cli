@@ -8,8 +8,7 @@ use accessibility_sys::{
     AXUIElementCreateApplication, AXUIElementPerformAction, AXUIElementRef,
 };
 use core_foundation::base::{CFTypeRef, TCFType};
-use core_foundation::string::{CFString, CFStringRef};
-use core_foundation::{array::CFArray, number::CFNumber};
+use core_foundation::string::CFString;
 use std::collections::HashSet;
 
 #[cfg(target_os = "macos")]
@@ -78,8 +77,7 @@ unsafe fn dump_element_recursive(
     // Uses max_depth=5 to prevent stack overflow on circular refs. 5 levels covers typical UI hierarchies per Apple HIG. See Decision Log.
     if depth < max_depth {
         if let Ok(children) = get_children(element) {
-            for child in children.iter() {
-                let child_ref = *child as AXUIElementRef;
+            for child_ref in children {
                 match dump_element_recursive(child_ref, depth + 1, max_depth, visited) {
                     Ok(child_elem) => {
                         if child_elem.name != "[circular]" {
@@ -126,14 +124,16 @@ unsafe fn element_to_uia(element: AXUIElementRef, depth: u32) -> Result<UiaEleme
     })
 }
 
-unsafe fn get_attribute_string(element: AXUIElementRef, attribute: CFStringRef) -> Option<String> {
+/// Extracts a string attribute from an AXUIElement.
+/// The `attribute` parameter is a `&str` (as defined in accessibility-sys 0.1).
+unsafe fn get_attribute_string(element: AXUIElementRef, attribute: &str) -> Option<String> {
+    let attr_cf = CFString::new(attribute);
     let mut value: CFTypeRef = std::ptr::null();
-    let result = AXUIElementCopyAttributeValue(element, attribute, &mut value);
+    let result = AXUIElementCopyAttributeValue(element, attr_cf.as_concrete_TypeRef(), &mut value);
 
     if result == 0 && !value.is_null() {
-        let cf_string = value as CFStringRef;
-        let rust_string = CFString::wrap_under_create_rule(cf_string).to_string();
-        Some(rust_string)
+        let cf_string = CFString::wrap_under_create_rule(value as _);
+        Some(cf_string.to_string())
     } else {
         if !value.is_null() {
             core_foundation::base::CFRelease(value);
@@ -143,31 +143,39 @@ unsafe fn get_attribute_string(element: AXUIElementRef, attribute: CFStringRef) 
 }
 
 unsafe fn get_children(element: AXUIElementRef) -> Result<Vec<AXUIElementRef>> {
+    let attr_cf = CFString::new(kAXChildrenAttribute);
     let mut value: CFTypeRef = std::ptr::null();
-    let result = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute, &mut value);
+    let result = AXUIElementCopyAttributeValue(element, attr_cf.as_concrete_TypeRef(), &mut value);
 
     if result != 0 || value.is_null() {
         return Ok(Vec::new());
     }
 
-    let cf_array: CFArray<AXUIElementRef> = CFArray::wrap_under_create_rule(value as _);
+    // Use raw CFArray access to avoid FromVoid trait bound issues with AXUIElementRef
+    use core_foundation_sys::array::{CFArrayGetCount, CFArrayGetValueAtIndex};
+    let arr_ref = value as core_foundation_sys::array::CFArrayRef;
+    let count = CFArrayGetCount(arr_ref);
     let mut children = Vec::new();
 
-    for i in 0..cf_array.len() {
-        if let Some(child) = cf_array.get(i) {
-            children.push(*child);
+    for i in 0..count {
+        let child = CFArrayGetValueAtIndex(arr_ref, i) as AXUIElementRef;
+        if !child.is_null() {
+            children.push(child);
         }
     }
 
+    core_foundation::base::CFRelease(value);
     Ok(children)
 }
 
 unsafe fn get_bounds(element: AXUIElementRef) -> (i32, i32, i32, i32) {
+    let pos_attr = CFString::new(kAXPositionAttribute);
+    let size_attr = CFString::new(kAXSizeAttribute);
     let mut pos_value: CFTypeRef = std::ptr::null();
     let mut size_value: CFTypeRef = std::ptr::null();
 
-    let pos_result = AXUIElementCopyAttributeValue(element, kAXPositionAttribute, &mut pos_value);
-    let size_result = AXUIElementCopyAttributeValue(element, kAXSizeAttribute, &mut size_value);
+    let pos_result = AXUIElementCopyAttributeValue(element, pos_attr.as_concrete_TypeRef(), &mut pos_value);
+    let size_result = AXUIElementCopyAttributeValue(element, size_attr.as_concrete_TypeRef(), &mut size_value);
 
     let (x, y) = if pos_result == 0 && !pos_value.is_null() {
         extract_point(pos_value)
@@ -192,44 +200,51 @@ unsafe fn get_bounds(element: AXUIElementRef) -> (i32, i32, i32, i32) {
 }
 
 unsafe fn extract_point(value: CFTypeRef) -> (i32, i32) {
-    use core_foundation::base::kCFAllocatorDefault;
-    use core_foundation::dictionary::CFDictionary;
+    use core_foundation::number::CFNumber;
+    use core_foundation_sys::dictionary::CFDictionaryGetValue;
 
-    let dict = CFDictionary::<*const core_foundation::string::__CFString, CFTypeRef>::wrap_under_get_rule(value as _);
-
+    let dict_ref = value as core_foundation_sys::dictionary::CFDictionaryRef;
     let x_key = CFString::new("x");
     let y_key = CFString::new("y");
 
-    let x = dict
-        .find(x_key.as_concrete_TypeRef())
-        .and_then(|v| CFNumber::wrap_under_get_rule(*v as _).to_i32())
-        .unwrap_or(0);
+    let x_val = CFDictionaryGetValue(dict_ref, x_key.as_concrete_TypeRef() as _);
+    let x = if !x_val.is_null() {
+        CFNumber::wrap_under_get_rule(x_val as _).to_i32().unwrap_or(0)
+    } else {
+        0
+    };
 
-    let y = dict
-        .find(y_key.as_concrete_TypeRef())
-        .and_then(|v| CFNumber::wrap_under_get_rule(*v as _).to_i32())
-        .unwrap_or(0);
+    let y_val = CFDictionaryGetValue(dict_ref, y_key.as_concrete_TypeRef() as _);
+    let y = if !y_val.is_null() {
+        CFNumber::wrap_under_get_rule(y_val as _).to_i32().unwrap_or(0)
+    } else {
+        0
+    };
 
     (x, y)
 }
 
 unsafe fn extract_size(value: CFTypeRef) -> (i32, i32) {
-    use core_foundation::dictionary::CFDictionary;
+    use core_foundation::number::CFNumber;
+    use core_foundation_sys::dictionary::CFDictionaryGetValue;
 
-    let dict = CFDictionary::<*const core_foundation::string::__CFString, CFTypeRef>::wrap_under_get_rule(value as _);
-
+    let dict_ref = value as core_foundation_sys::dictionary::CFDictionaryRef;
     let w_key = CFString::new("w");
     let h_key = CFString::new("h");
 
-    let w = dict
-        .find(w_key.as_concrete_TypeRef())
-        .and_then(|v| CFNumber::wrap_under_get_rule(*v as _).to_i32())
-        .unwrap_or(0);
+    let w_val = CFDictionaryGetValue(dict_ref, w_key.as_concrete_TypeRef() as _);
+    let w = if !w_val.is_null() {
+        CFNumber::wrap_under_get_rule(w_val as _).to_i32().unwrap_or(0)
+    } else {
+        0
+    };
 
-    let h = dict
-        .find(h_key.as_concrete_TypeRef())
-        .and_then(|v| CFNumber::wrap_under_get_rule(*v as _).to_i32())
-        .unwrap_or(0);
+    let h_val = CFDictionaryGetValue(dict_ref, h_key.as_concrete_TypeRef() as _);
+    let h = if !h_val.is_null() {
+        CFNumber::wrap_under_get_rule(h_val as _).to_i32().unwrap_or(0)
+    } else {
+        0
+    };
 
     (w, h)
 }

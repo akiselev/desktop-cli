@@ -64,7 +64,7 @@ jobs:
 
       - name: Run tests (Windows)
         if: matrix.e2e == 'native'
-        run: cargo test --test-threads=1
+        run: cargo test -- --test-threads=1
 
       - name: Run unit tests (macOS)
         if: matrix.e2e == 'skip'

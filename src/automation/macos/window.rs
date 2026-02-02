@@ -120,56 +120,91 @@ pub fn get_window_info_by_id(window_id: u32) -> Result<WindowInfo> {
     )))
 }
 
-/// Extracts string value from CFDictionary by key.
+/// Extracts string value from CFDictionary by key using raw CFDictionaryGetValue.
 #[cfg(target_os = "macos")]
 fn get_dict_string(dict: &core_foundation::dictionary::CFDictionary, key: &str) -> Option<String> {
     use core_foundation::base::TCFType;
     use core_foundation::string::CFString;
+    use core_foundation_sys::dictionary::CFDictionaryGetValue;
 
-    let key_cf = CFString::new(key);
-    dict.find(&key_cf.as_CFType())
-        .and_then(|value| unsafe { CFString::wrap_under_get_rule(*value as _).as_CFTypeRef() as *const _ })
-        .map(|s: *const _| unsafe { CFString::wrap_under_get_rule(s).to_string() })
+    unsafe {
+        let key_cf = CFString::new(key);
+        let value = CFDictionaryGetValue(dict.as_concrete_TypeRef(), key_cf.as_concrete_TypeRef() as _);
+        if value.is_null() {
+            None
+        } else {
+            Some(CFString::wrap_under_get_rule(value as _).to_string())
+        }
+    }
 }
 
-/// Extracts number value from CFDictionary by key.
+/// Extracts number value from CFDictionary by key using raw CFDictionaryGetValue.
 #[cfg(target_os = "macos")]
 fn get_dict_number(dict: &core_foundation::dictionary::CFDictionary, key: &str) -> Option<i64> {
     use core_foundation::base::TCFType;
     use core_foundation::number::CFNumber;
     use core_foundation::string::CFString;
+    use core_foundation_sys::dictionary::CFDictionaryGetValue;
 
-    let key_cf = CFString::new(key);
-    dict.find(&key_cf.as_CFType())
-        .and_then(|value| unsafe { CFNumber::wrap_under_get_rule(*value as _).to_i64() })
+    unsafe {
+        let key_cf = CFString::new(key);
+        let value = CFDictionaryGetValue(dict.as_concrete_TypeRef(), key_cf.as_concrete_TypeRef() as _);
+        if value.is_null() {
+            None
+        } else {
+            CFNumber::wrap_under_get_rule(value as _).to_i64()
+        }
+    }
 }
 
 /// Extracts window bounds from CFDictionary as WindowRect.
 #[cfg(target_os = "macos")]
 fn get_window_bounds(dict: &core_foundation::dictionary::CFDictionary) -> WindowRect {
     use core_foundation::base::TCFType;
-    use core_foundation::dictionary::CFDictionary as CFDict;
+    use core_foundation::number::CFNumber;
     use core_foundation::string::CFString;
+    use core_foundation_sys::dictionary::CFDictionaryGetValue;
 
-    let key_cf = CFString::new("kCGWindowBounds");
-    if let Some(bounds_ref) = dict.find(&key_cf.as_CFType()) {
-        let bounds_dict: CFDict = unsafe { CFDict::wrap_under_get_rule(*bounds_ref as _) };
+    unsafe {
+        let key_cf = CFString::new("kCGWindowBounds");
+        let bounds_val = CFDictionaryGetValue(dict.as_concrete_TypeRef(), key_cf.as_concrete_TypeRef() as _);
 
-        let x = get_dict_number(&bounds_dict, "X").unwrap_or(0) as i32;
-        let y = get_dict_number(&bounds_dict, "Y").unwrap_or(0) as i32;
-        let width = get_dict_number(&bounds_dict, "Width").unwrap_or(0) as i32;
-        let height = get_dict_number(&bounds_dict, "Height").unwrap_or(0) as i32;
+        if !bounds_val.is_null() {
+            let bounds_dict = bounds_val as core_foundation_sys::dictionary::CFDictionaryRef;
 
-        if width >= 0 && height >= 0 {
-            return WindowRect { x, y, width: width as u32, height: height as u32 };
+            let x = dict_get_number(bounds_dict, "X").unwrap_or(0) as i32;
+            let y = dict_get_number(bounds_dict, "Y").unwrap_or(0) as i32;
+            let width = dict_get_number(bounds_dict, "Width").unwrap_or(0) as i32;
+            let height = dict_get_number(bounds_dict, "Height").unwrap_or(0) as i32;
+
+            if width >= 0 && height >= 0 {
+                return WindowRect { x, y, width: width as u32, height: height as u32 };
+            }
+        }
+
+        WindowRect {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
         }
     }
+}
 
-    WindowRect {
-        x: 0,
-        y: 0,
-        width: 0,
-        height: 0,
+/// Raw helper to get a number from a CFDictionaryRef by string key.
+#[cfg(target_os = "macos")]
+unsafe fn dict_get_number(dict: core_foundation_sys::dictionary::CFDictionaryRef, key: &str) -> Option<i64> {
+    use core_foundation::base::TCFType;
+    use core_foundation::number::CFNumber;
+    use core_foundation::string::CFString;
+    use core_foundation_sys::dictionary::CFDictionaryGetValue;
+
+    let key_cf = CFString::new(key);
+    let value = CFDictionaryGetValue(dict, key_cf.as_concrete_TypeRef() as _);
+    if value.is_null() {
+        None
+    } else {
+        CFNumber::wrap_under_get_rule(value as _).to_i64()
     }
 }
 
