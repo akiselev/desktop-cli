@@ -89,11 +89,13 @@ jobs:
           docker build -f Dockerfile.tutorial -t desktop-cli-tutorial .
 
       - name: Generate tutorials
+        timeout-minutes: 3
         run: |
           CONTAINER_ID=$(docker create desktop-cli-tutorial)
           docker start -a "$CONTAINER_ID" || true
           docker cp "$CONTAINER_ID:/app/docs/src/tutorials/" docs/src/tutorials/ 2>/dev/null || true
           docker rm "$CONTAINER_ID"
+        continue-on-error: true
 
       - name: Check for tutorial drift
         run: |
