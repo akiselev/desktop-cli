@@ -72,12 +72,17 @@ fn query_elements(hwnd: &str, selector: &str, find_all: bool) -> Result<QueryRes
     linux::atspi::query_elements(hwnd, selector, find_all).map_err(|e| OpsError(e.to_string()))
 }
 
+fn focus_window(hwnd: &str) -> Result<()> {
+    linux::window::focus_window(hwnd).map_err(|e| OpsError(e.to_string()))
+}
+
 fn click(
-    _hwnd: &str,
+    hwnd: &str,
     _selector: &str,
     coords: Option<(i32, i32)>,
     _button: Option<&str>,
 ) -> Result<()> {
+    focus_window(hwnd)?;
     if let Some((x, y)) = coords {
         linux::input::click_at_coords(x, y).map_err(|e| OpsError(e.to_string()))
     } else {
@@ -88,15 +93,18 @@ fn click(
     }
 }
 
-fn type_text(_hwnd: &str, text: &str, _selector: Option<&str>) -> Result<()> {
+fn type_text(hwnd: &str, text: &str, _selector: Option<&str>) -> Result<()> {
+    focus_window(hwnd)?;
     linux::input::type_text(text).map_err(|e| OpsError(e.to_string()))
 }
 
-fn send_keys(keys: &str) -> Result<()> {
+fn send_keys(hwnd: &str, keys: &str) -> Result<()> {
+    focus_window(hwnd)?;
     linux::input::send_keys(keys).map_err(|e| OpsError(e.to_string()))
 }
 
-fn scroll(direction: &str, amount: i32) -> Result<()> {
+fn scroll(hwnd: &str, direction: &str, amount: i32) -> Result<()> {
+    focus_window(hwnd)?;
     linux::input::scroll(direction, amount).map_err(|e| OpsError(e.to_string()))
 }
 
@@ -177,12 +185,12 @@ pub fn type_text_api(hwnd: &str, text: &str, selector: Option<&str>) -> Result<(
     LinuxPlatform.type_text(hwnd, text, selector)
 }
 
-pub fn send_keys_api(keys: &str) -> Result<()> {
-    LinuxPlatform.send_keys(keys)
+pub fn send_keys_api(hwnd: &str, keys: &str) -> Result<()> {
+    LinuxPlatform.send_keys(hwnd, keys)
 }
 
-pub fn scroll_api(direction: &str, amount: i32) -> Result<()> {
-    LinuxPlatform.scroll(direction, amount)
+pub fn scroll_api(hwnd: &str, direction: &str, amount: i32) -> Result<()> {
+    LinuxPlatform.scroll(hwnd, direction, amount)
 }
 
 // ============================================================================
@@ -269,11 +277,11 @@ impl DesktopPlatform for LinuxPlatform {
         type_text(hwnd, text, selector)
     }
 
-    fn send_keys(&self, keys: &str) -> Result<()> {
-        send_keys(keys)
+    fn send_keys(&self, hwnd: &str, keys: &str) -> Result<()> {
+        send_keys(hwnd, keys)
     }
 
-    fn scroll(&self, direction: &str, amount: i32) -> Result<()> {
-        scroll(direction, amount)
+    fn scroll(&self, hwnd: &str, direction: &str, amount: i32) -> Result<()> {
+        scroll(hwnd, direction, amount)
     }
 }

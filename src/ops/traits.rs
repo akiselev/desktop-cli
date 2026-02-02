@@ -99,8 +99,8 @@ pub trait DesktopPlatform {
     fn type_text(&self, hwnd: &str, text: &str, selector: Option<&str>) -> Result<()>;
 
     /// Send key combination (e.g., "ctrl+c")
-    fn send_keys(&self, keys: &str) -> Result<()>;
+    fn send_keys(&self, hwnd: &str, keys: &str) -> Result<()>;
 
     /// Scroll window or element
-    fn scroll(&self, direction: &str, amount: i32) -> Result<()>;
+    fn scroll(&self, hwnd: &str, direction: &str, amount: i32) -> Result<()>;
 }

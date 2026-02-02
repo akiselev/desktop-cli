@@ -313,11 +313,11 @@ fn type_text(hwnd_str: &str, text: &str, selector: Option<&str>) -> Result<()> {
     input_type_text(text).map_err(|e| OpsError(e.to_string()))
 }
 
-fn send_keys(keys: &str) -> Result<()> {
+fn send_keys(_hwnd: &str, keys: &str) -> Result<()> {
     input_send_keys(keys).map_err(|e| OpsError(e.to_string()))
 }
 
-fn scroll(direction: &str, amount: i32) -> Result<()> {
+fn scroll(_hwnd: &str, direction: &str, amount: i32) -> Result<()> {
     let scroll_amount = match direction.to_lowercase().as_str() {
         "up" => amount * 120,
         "down" => -(amount * 120),
@@ -404,12 +404,12 @@ pub fn type_text_api(hwnd: &str, text: &str, selector: Option<&str>) -> Result<(
     WindowsPlatform.type_text(hwnd, text, selector)
 }
 
-pub fn send_keys_api(keys: &str) -> Result<()> {
-    WindowsPlatform.send_keys(keys)
+pub fn send_keys_api(hwnd: &str, keys: &str) -> Result<()> {
+    WindowsPlatform.send_keys(hwnd, keys)
 }
 
-pub fn scroll_api(direction: &str, amount: i32) -> Result<()> {
-    WindowsPlatform.scroll(direction, amount)
+pub fn scroll_api(hwnd: &str, direction: &str, amount: i32) -> Result<()> {
+    WindowsPlatform.scroll(hwnd, direction, amount)
 }
 
 // ============================================================================
@@ -499,11 +499,11 @@ impl DesktopPlatform for WindowsPlatform {
         type_text(hwnd, text, selector)
     }
 
-    fn send_keys(&self, keys: &str) -> Result<()> {
-        send_keys(keys)
+    fn send_keys(&self, hwnd: &str, keys: &str) -> Result<()> {
+        send_keys(hwnd, keys)
     }
 
-    fn scroll(&self, direction: &str, amount: i32) -> Result<()> {
-        scroll(direction, amount)
+    fn scroll(&self, hwnd: &str, direction: &str, amount: i32) -> Result<()> {
+        scroll(hwnd, direction, amount)
     }
 }

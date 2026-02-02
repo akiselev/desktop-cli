@@ -164,6 +164,59 @@ fn get_window_info(conn: &RustConnection, window_id: u32) -> Result<WindowInfo> 
     })
 }
 
+/// Focus/activate a window using EWMH _NET_ACTIVE_WINDOW client message
+///
+/// This is the standard, compositor-friendly way to activate a window on X11.
+/// Sends a client message to the root window requesting the window manager
+/// to bring the target window to the foreground.
+pub fn focus_window(hwnd: &str) -> Result<()> {
+    let window_id = parse_window_id(hwnd)?;
+    let (conn, screen_num) = RustConnection::connect(None).map_err(|e| {
+        crate::error::DesktopCliError::Platform(format!("X11 connection failed: {}", e))
+    })?;
+    let screen = &conn.setup().roots[screen_num];
+
+    let net_active_window = conn
+        .intern_atom(false, b"_NET_ACTIVE_WINDOW")
+        .map_err(|e| {
+            crate::error::DesktopCliError::Platform(format!("Failed to intern atom: {}", e))
+        })?
+        .reply()
+        .map_err(|e| {
+            crate::error::DesktopCliError::Platform(format!("Failed to get atom reply: {}", e))
+        })?
+        .atom;
+
+    // Send _NET_ACTIVE_WINDOW client message to root window
+    let event = ClientMessageEvent::new(
+        32,
+        window_id,
+        net_active_window,
+        ClientMessageData::from([
+            1u32, // source indication: 1 = application request
+            0,    // timestamp (0 = current)
+            0,    // requestor's currently active window (0 = none)
+            0, 0,
+        ]),
+    );
+    conn.send_event(
+        false,
+        screen.root,
+        EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY,
+        event,
+    )
+    .map_err(|e| {
+        crate::error::DesktopCliError::Platform(format!("Failed to send event: {}", e))
+    })?;
+    conn.flush().map_err(|e| {
+        crate::error::DesktopCliError::Platform(format!("Failed to flush connection: {}", e))
+    })?;
+
+    // Small delay for window manager to process
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    Ok(())
+}
+
 pub fn get_window_info_by_id(window_id: u32) -> Result<WindowInfo> {
     let (conn, _screen_num) = RustConnection::connect(None).map_err(|e| {
         crate::error::DesktopCliError::Platform(format!("X11 connection failed: {}", e))

@@ -326,8 +326,8 @@ fn main() -> anyhow::Result<()> {
         }
 
         Commands::Keys { window, keys } => {
-            let _hwnd = resolve_target(Some(&window), None, cli.target.as_deref())?;
-            ops::send_keys(&keys)?;
+            let hwnd = resolve_target(Some(&window), None, cli.target.as_deref())?;
+            ops::send_keys(&hwnd, &keys)?;
             println!("Keys sent successfully");
         }
 
@@ -336,8 +336,8 @@ fn main() -> anyhow::Result<()> {
             direction,
             amount,
         } => {
-            let _hwnd = resolve_target(Some(&window), None, cli.target.as_deref())?;
-            ops::scroll(&direction, amount)?;
+            let hwnd = resolve_target(Some(&window), None, cli.target.as_deref())?;
+            ops::scroll(&hwnd, &direction, amount)?;
             println!("Scroll successful");
         }
 

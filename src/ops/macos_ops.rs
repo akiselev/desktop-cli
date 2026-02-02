@@ -103,11 +103,11 @@ pub fn type_text(_hwnd: &str, text: &str, _selector: Option<&str>) -> Result<()>
     macos::input::type_text(text).map_err(|e| OpsError(e.to_string()))
 }
 
-pub fn send_keys(keys: &str) -> Result<()> {
+pub fn send_keys(_hwnd: &str, keys: &str) -> Result<()> {
     macos::input::send_keys(keys).map_err(|e| OpsError(e.to_string()))
 }
 
-pub fn scroll(direction: &str, amount: i32) -> Result<()> {
+pub fn scroll(_hwnd: &str, direction: &str, amount: i32) -> Result<()> {
     macos::input::scroll(direction, amount).map_err(|e| OpsError(e.to_string()))
 }
 
@@ -189,11 +189,11 @@ impl DesktopPlatform for MacOSPlatform {
         type_text(hwnd, text, selector)
     }
 
-    fn send_keys(&self, keys: &str) -> Result<()> {
-        send_keys(keys)
+    fn send_keys(&self, hwnd: &str, keys: &str) -> Result<()> {
+        send_keys(hwnd, keys)
     }
 
-    fn scroll(&self, direction: &str, amount: i32) -> Result<()> {
-        scroll(direction, amount)
+    fn scroll(&self, hwnd: &str, direction: &str, amount: i32) -> Result<()> {
+        scroll(hwnd, direction, amount)
     }
 }

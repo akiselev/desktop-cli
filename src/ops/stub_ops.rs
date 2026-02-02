@@ -72,10 +72,10 @@ pub fn type_text(_: &str, _: &str, _: Option<&str>) -> Result<()> {
     not_supported()
 }
 
-pub fn send_keys(_: &str) -> Result<()> {
+pub fn send_keys(_: &str, _: &str) -> Result<()> {
     not_supported()
 }
 
-pub fn scroll(_: &str, _: i32) -> Result<()> {
+pub fn scroll(_: &str, _: &str, _: i32) -> Result<()> {
     not_supported()
 }
