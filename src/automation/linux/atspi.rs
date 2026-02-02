@@ -1,4 +1,7 @@
 //! AT-SPI2 accessibility tree operations
+//!
+//! AT-SPI2 timeout set to 5s: D-Bus connection ~1s + tree traversal depth-5 ~2s + 2s safety margin.
+//! See Decision Log.
 
 use super::window::parse_window_id;
 use crate::automation::linux::roles::map_role;
@@ -266,20 +269,31 @@ pub fn dump_tree(window_id: &str, max_depth: u32) -> Result<UiaElement> {
     let window_id_num = parse_window_id(window_id)?;
 
     with_atspi_runtime(async {
-        let (connection, dest, path) = get_accessible_for_window(window_id_num).await?;
+        let timeout = Duration::from_secs(5);
 
-        let zbus_conn = connection.connection();
+        let tree_future = async {
+            let (connection, dest, path) = get_accessible_for_window(window_id_num).await?;
 
-        let accessible = AccessibleProxy::builder(zbus_conn)
-            .destination(dest.as_str())
-            .map_err(|e| DesktopCliError::Platform(format!("Failed to build proxy: {}", e)))?
-            .path(path.as_str())
-            .map_err(|e| DesktopCliError::Platform(format!("Failed to set path: {}", e)))?
-            .build()
-            .await
-            .map_err(|e| DesktopCliError::Platform(format!("Failed to build accessible: {}", e)))?;
+            let zbus_conn = connection.connection();
 
-        traverse_element(&accessible, 0, max_depth).await
+            let accessible = AccessibleProxy::builder(zbus_conn)
+                .destination(dest.as_str())
+                .map_err(|e| DesktopCliError::Platform(format!("Failed to build proxy: {}", e)))?
+                .path(path.as_str())
+                .map_err(|e| DesktopCliError::Platform(format!("Failed to set path: {}", e)))?
+                .build()
+                .await
+                .map_err(|e| DesktopCliError::Platform(format!("Failed to build accessible: {}", e)))?;
+
+            traverse_element(&accessible, 0, max_depth).await
+        };
+
+        match tokio::time::timeout(timeout, tree_future).await {
+            Ok(result) => result,
+            Err(_) => Err(DesktopCliError::Platform(
+                "AT-SPI2 operation timed out after 5 seconds".to_string(),
+            )),
+        }
     })
 }
 

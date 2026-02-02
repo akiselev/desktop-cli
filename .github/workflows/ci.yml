@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            e2e: docker
+          - os: windows-latest
+            e2e: native
+          - os: macos-latest
+            e2e: skip
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install Linux dependencies
+        if: matrix.e2e == 'docker'
+        run: sudo apt-get update && sudo apt-get install -y libxdo-dev
+
+      - name: Build Docker (Linux)
+        if: matrix.e2e == 'docker'
+        run: docker build -t desktop-cli-test .
+
+      - name: Run E2E tests in Docker (Linux)
+        if: matrix.e2e == 'docker'
+        timeout-minutes: 3
+        run: |
+          docker run --rm --init \
+            -e RUST_BACKTRACE=1 \
+            desktop-cli-test 2>&1
+
+      - name: Run unit tests (Linux)
+        if: matrix.e2e == 'docker'
+        run: cargo test --lib --no-fail-fast
+
+      - name: Run tests (Windows)
+        if: matrix.e2e == 'native'
+        run: cargo test --test-threads=1
+
+      - name: Run unit tests (macOS)
+        if: matrix.e2e == 'skip'
+        run: cargo test --lib

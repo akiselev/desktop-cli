@@ -3,5 +3,4 @@
 pub mod atspi;
 pub mod input;
 pub mod roles;
-pub mod screenshot;
 pub mod window;

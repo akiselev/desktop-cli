@@ -13,10 +13,16 @@ pub fn map_role(ax_role: &str) -> String {
         "AXList" => "List",
         "AXRow" => "ListItem",
         "AXWindow" => "Window",
-        "AXGroup" => "Pane",
+        "AXGroup" => "Group",
         "AXScrollBar" => "ScrollBar",
         "AXTable" => "Table",
         "AXCell" => "DataItem",
+        "AXImage" => "Image",
+        "AXTextArea" => "Edit",
+        "AXToolbar" => "ToolBar",
+        "AXTabGroup" => "Tab",
+        "AXScrollArea" => "Pane",
+        "AXSplitGroup" => "Pane",
         _ => "Custom",
     }
     .to_string()

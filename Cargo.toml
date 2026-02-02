@@ -57,14 +57,14 @@ windows = { version = "0.58", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Wdk_System_Threading",
 ] }
-win-screenshot = "4"
 uiautomation = "0.24"
 
 # macOS Automation (macOS only)
 [target.'cfg(target_os = "macos")'.dependencies]
 accessibility-sys = "0.1"
+core-graphics = "0.23"
+core-foundation = "0.9"
 enigo = "0.2"
-# xcap removed - screenshot support deferred
 
 # Linux Automation (Linux only)
 [target.'cfg(target_os = "linux")'.dependencies]

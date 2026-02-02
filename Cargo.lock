@@ -573,6 +573,8 @@ dependencies = [
  "atspi",
  "base64",
  "clap",
+ "core-foundation",
+ "core-graphics",
  "directories",
  "dirs",
  "enigo",
@@ -590,7 +592,6 @@ dependencies = [
  "tracing-subscriber",
  "uiautomation",
  "wildmatch",
- "win-screenshot",
  "windows 0.58.0",
  "x11rb",
  "zbus",
@@ -2886,15 +2887,6 @@ name = "wildmatch"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29333c3ea1ba8b17211763463ff24ee84e41c78224c16b001cd907e663a38c68"
-
-[[package]]
-name = "win-screenshot"
-version = "4.0.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e46fb2d7cb00430b7c433b05cc37a0f2f03a5305a975b1886a6ce5e1d8977d4b"
-dependencies = [
- "windows 0.62.2",
-]
 
 [[package]]
 name = "winapi"

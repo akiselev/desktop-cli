@@ -1,101 +1,105 @@
-# Automation Module Architecture
+# Automation Architecture
 
-Platform-specific desktop automation implementations.
+Cross-platform desktop automation with compile-time platform dispatch and normalized API surface.
 
 ## Architecture
 
 ```
-automation/
-├── types.rs              # Cross-platform types (WindowInfo, WindowRect)
-├── windows/              # Windows automation
-│   ├── uia/              # UI Automation element tree
-│   ├── input.rs          # SendInput keyboard/mouse
-│   ├── screenshot.rs     # DWM/win-screenshot capture
-│   └── window.rs         # EnumWindows enumeration
-├── linux/                # Linux automation
-│   ├── atspi.rs          # AT-SPI2 element tree
-│   ├── window.rs         # X11 window enumeration
-│   ├── input.rs          # enigo input simulation
-│   ├── screenshot.rs     # xcap capture
-│   └── roles.rs          # AT-SPI2 → UIA role mapping
-└── macos/                # macOS automation
-    ├── accessibility.rs  # AXUIElement element tree
-    ├── window.rs         # Cocoa window enumeration
-    ├── input.rs          # enigo input simulation
-    ├── screenshot.rs     # xcap capture
-    ├── permissions.rs    # Accessibility permission check
-    └── roles.rs          # AXRole → UIA role mapping
+                    CLI (main.rs)
+                         |
+                    ops/mod.rs (platform dispatch)
+                         |
+         +---------------+---------------+
+         |               |               |
+    windows_ops      linux_ops       macos_ops
+         |               |               |
+    automation/      automation/     automation/
+    windows/         linux/          macos/
+    - uia/           - atspi.rs      - accessibility.rs
+    - window.rs      - window.rs     - window.rs
+    - input.rs       - input.rs      - input.rs
 ```
 
-## Platform Differences
+Platform modules isolated by OS `cfg` flags. Each platform folder self-contained with no cross-platform dependencies at this layer. Trait abstraction lives in `ops/traits.rs`.
 
-### Windows
-- Native UI Automation (UIA) provides element tree with consistent control types
-- SendInput for input simulation (OS-level)
-- HWND-based window handles (hex string format)
-- DPI awareness built into Windows APIs
+## Data Flow
 
-### Linux (X11)
-- AT-SPI2 over D-Bus provides element tree (requires running service)
-- X11 protocol for window enumeration via `_NET_CLIENT_LIST`
-- enigo for input simulation (X11 level)
-- xcap for screenshots
-- Window handles are X11 window IDs (hex string format)
-- Wayland support deferred (X11-only initially)
+```
+User Request (hwnd/selector)
+         |
+         v
+    Platform Dispatch (cfg-based compile-time)
+         |
+         v
+    Window Resolution (X11/_NET_CLIENT_LIST, EnumWindows, CGWindowList)
+         |
+         v
+    Element Tree (AT-SPI2, UIA, AXUIElement)
+         |
+         v
+    Action Execution (enigo, SendInput, CGEvent)
+         |
+         v
+    Result (UiaElement tree, PatternResult)
+```
 
-### macOS
-- Cocoa Accessibility framework provides element tree
-- AXUIElement for element queries
-- Requires explicit user permission grant (System Preferences → Security & Privacy → Accessibility)
-- enigo for input simulation
-- xcap for screenshots
-- Window handles are PID:element_ref format
-- Retina DPI scaling handled in coordinate conversion
-
-## Role Normalization
-
-All platforms map native roles to Windows UIA control types:
-
-### AT-SPI2 → UIA (Linux)
-- `push button` → `Button`
-- `text` → `Edit`
-- `menu` → `Menu`
-- `menu item` → `MenuItem`
-- `check box` → `CheckBox`
-- See `linux/roles.rs` for complete mapping
-
-### AXRole → UIA (macOS)
-- `AXButton` → `Button`
-- `AXTextField` → `Edit`
-- `AXMenu` → `Menu`
-- `AXMenuItem` → `MenuItem`
-- `AXCheckBox` → `CheckBox`
-- See `macos/roles.rs` for complete mapping
-
-## Invariants
-
-1. **Element tree structure**: All platforms return `UiaElement` with normalized `control_type` field. Tree traversal APIs are consistent.
-
-2. **Coordinate system**: Coordinates are pixels relative to window origin. DPI scaling handled internally on macOS (Retina) and Windows (high-DPI).
-
-3. **Async operations**: AT-SPI2 on Linux uses async D-Bus. Runtime is tokio (already a dependency).
-
-4. **Error handling**: Platform-specific errors (AT-SPI2 service unavailable, macOS permission denied, X11 connection failed) wrapped in `DesktopCliError::Platform`.
+Each platform implements identical public API but uses platform-native libraries. Results normalized to common types before returning to ops layer.
 
 ## Why This Structure
 
-- **Platform isolation**: Each platform has dedicated directory. No shared code that would couple platforms.
-- **Parallel to ops/**: Each automation module mirrors ops structure. `linux_ops.rs` calls `automation::linux::*`.
-- **Shared types in types.rs**: `WindowInfo` and `WindowRect` are already cross-platform. No platform-specific variants needed.
-- **Role mapping as separate module**: Role normalization logic isolated in `roles.rs` per platform. Single responsibility.
+**Platform isolation by cfg flags**: Compile-time selection, zero runtime overhead. Separate binaries per platform accepted in exchange for no branching cost.
 
-## Platform-Specific Notes
+**Common types in `types.rs`**: Consistent API surface. `WindowInfo`, `WindowRect`, `Action` shared across platforms. Platform-specific details (e.g., hwnd format) kept as opaque strings.
 
-### Linux AT-SPI2 Setup
-AT-SPI2 D-Bus service must be running. Standard on GNOME and KDE. Detection via D-Bus connection attempt returns informative error with activation hint if unavailable.
+**`ops/` trait-based abstraction**: Testable, swappable platform implementations. CLI layer interacts only with `DesktopPlatform` trait, never platform-specific modules directly.
 
-### macOS Permissions
-Operations requiring accessibility return graceful error with remediation steps if permission not granted. Non-accessibility operations (window listing without element tree) remain functional.
+**Self-contained platform folders**: Contributors need only platform expertise, not cross-platform knowledge. Each folder builds independently with platform-specific dependencies.
 
-### Windows UIA
-Available by default on Windows. No service dependencies or permission prompts.
+## Invariants
+
+**hwnd format**: Always `"0x{hex}"` string representation regardless of platform's native handle type. Windows uses actual HWND, Linux uses X11 Window ID, macOS uses PID+element reference. All code outside platform modules treats hwnd as opaque string.
+
+**UiaElement.control_type**: Normalized to UIA names (`Button`, `Edit`, `Text`, etc.) not platform names. Linux AT-SPI2 roles mapped via `roles::map_role()`, macOS AX roles mapped similarly. Consumers see consistent vocabulary.
+
+**Async wrapping**: All async operations (AT-SPI2 requires async) wrapped in sync API. Per-call tokio runtime created, blocks on result, runtime dropped. Library consumers never need async runtime in their code.
+
+**Coordinate system**: All coordinates in pixels relative to window origin. DPI scaling handled internally per platform. Windows uses physical pixels, Linux uses logical pixels with X11 scaling, macOS uses Cocoa coordinates.
+
+## Tradeoffs
+
+**Per-call tokio runtime vs global**: Chose per-call for simplicity. Accepts ~1ms overhead per AT-SPI2 operation to avoid managing global async runtime lifetime and thread safety. Linux E2E tests confirm overhead acceptable for automation workloads.
+
+**Compile-time platform dispatch vs runtime**: Chose compile-time for zero overhead. Accepted separate binaries per platform (increases build/release complexity) in exchange for no runtime branching or vtable indirection.
+
+**Real test apps vs system apps**: Chose real test apps (GTK fixture, Notepad) for consistency. Accepted build complexity (Docker for Linux, process management for Windows) in exchange for reproducible element trees across environments.
+
+**Normalization layer location**: Chose normalization at automation module boundary (before returning to ops layer). Accepted per-platform role mapping code duplication in exchange for clean separation and easier platform-specific debugging.
+
+## Platform-Specific Details
+
+### Windows
+- **Automation API**: UI Automation (UIAutomation crate)
+- **Window enumeration**: `EnumWindows` Win32 API
+- **Input simulation**: `SendInput` Win32 API
+- **Screenshots**: DWM API for composited windows
+- **Coordinates**: Physical pixels, DPI-aware
+
+### Linux
+- **Automation API**: AT-SPI2 (async via atspi crate)
+- **Window enumeration**: X11 `_NET_CLIENT_LIST` property
+- **Input simulation**: enigo crate (X11 XTest extension)
+- **Screenshots**: xcap crate (X11 capture)
+- **Coordinates**: Logical pixels with X11 scaling
+- **Runtime**: Per-call tokio runtime blocks on async AT-SPI2 calls
+
+### macOS
+- **Automation API**: Cocoa Accessibility (AXUIElement)
+- **Window enumeration**: CGWindowList API
+- **Input simulation**: CGEvent API
+- **Screenshots**: xcap crate (Core Graphics capture)
+- **Coordinates**: Cocoa coordinate system (origin at bottom-left)
+- **Permissions**: Requires Accessibility permissions, checked via `permissions.rs`
+
+## Testing Strategy
+
+See `tests/README.md` for comprehensive testing approach per platform.

@@ -9,8 +9,7 @@ use crate::automation::windows::input::{
 };
 use crate::automation::windows::uia::{self, PatternOp, Selector, SummaryOptions, TreeDumpOptions};
 use crate::automation::windows::{
-    capture_screenshot, get_window_info, list_windows as list_windows_raw, parse_hwnd,
-    ScreenshotMethod,
+    get_window_info, list_windows as list_windows_raw, parse_hwnd,
 };
 use crate::ops::traits::DesktopPlatform;
 use crate::rpc::types::{ElementRef, PatternResult, QueryResult, Screenshot, UiaElement};
@@ -66,20 +65,8 @@ fn parse_hwnd_string(hwnd_str: &str) -> Result<HWND> {
 // Screenshot Operations
 // ============================================================================
 
-fn take_screenshot(hwnd_str: &str, method: Option<&str>) -> Result<Screenshot> {
-    let hwnd = parse_hwnd(hwnd_str).map_err(|e| OpsError(e.to_string()))?;
-    let method = method
-        .and_then(|m| ScreenshotMethod::from_str(m))
-        .unwrap_or_default();
-
-    let screenshot = capture_screenshot(hwnd, method).map_err(|e| OpsError(e.to_string()))?;
-
-    Ok(Screenshot {
-        base64_image: screenshot.base64_image,
-        width: screenshot.width,
-        height: screenshot.height,
-        format: screenshot.format,
-    })
+fn take_screenshot(_hwnd_str: &str, _method: Option<&str>) -> Result<Screenshot> {
+    Err(OpsError("Screenshot functionality deferred to post-release".to_string()))
 }
 
 // ============================================================================

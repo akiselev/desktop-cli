@@ -21,8 +21,8 @@ pub type Result<T> = std::result::Result<T, OpsError>;
 /// Linux platform implementation using AT-SPI2 and X11
 pub struct LinuxPlatform;
 
-fn take_screenshot(hwnd: &str, _method: Option<&str>) -> Result<Screenshot> {
-    linux::screenshot::capture_window(hwnd).map_err(|e| OpsError(e.to_string()))
+fn take_screenshot(_hwnd: &str, _method: Option<&str>) -> Result<Screenshot> {
+    Err(OpsError("Screenshot functionality deferred to post-release".to_string()))
 }
 
 fn dump_tree(hwnd: &str, max_depth: u32) -> Result<UiaElement> {

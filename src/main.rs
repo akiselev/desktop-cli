@@ -179,16 +179,6 @@ enum Commands {
         amount: i32,
     },
 
-    /// Take a screenshot of a window
-    Screenshot {
-        /// Window query
-        window: String,
-
-        /// Screenshot method (bitblt or printwindow)
-        #[arg(long)]
-        method: Option<String>,
-    },
-
     /// Dump the UIA element tree for a window
     DumpTree {
         /// Window query
@@ -349,18 +339,6 @@ fn main() -> anyhow::Result<()> {
             let _hwnd = resolve_target(Some(&window), None, cli.target.as_deref())?;
             ops::scroll(&direction, amount)?;
             println!("Scroll successful");
-        }
-
-        Commands::Screenshot { window, method } => {
-            let hwnd = resolve_target(Some(&window), None, cli.target.as_deref())?;
-            let result = ops::take_screenshot(&hwnd, method.as_deref())?;
-            println!(
-                "{{\"width\": {}, \"height\": {}, \"format\": \"{}\", \"base64_length\": {}}}",
-                result.width,
-                result.height,
-                result.format,
-                result.base64_image.len()
-            );
         }
 
         Commands::DumpTree {
