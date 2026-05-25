@@ -3,8 +3,8 @@
 use crate::error::Result;
 use crate::rpc::types::UiaElement;
 use accessibility_sys::{
-    kAXChildrenAttribute, kAXPositionAttribute, kAXPressAction, kAXRoleAttribute,
-    kAXSizeAttribute, kAXTitleAttribute, kAXValueAttribute, AXUIElementCopyAttributeValue,
+    kAXChildrenAttribute, kAXPositionAttribute, kAXPressAction, kAXRoleAttribute, kAXSizeAttribute,
+    kAXTitleAttribute, kAXValueAttribute, AXUIElementCopyAttributeValue,
     AXUIElementCreateApplication, AXUIElementPerformAction, AXUIElementRef,
 };
 use core_foundation::base::{CFTypeRef, TCFType};
@@ -40,19 +40,21 @@ pub fn dump_tree(window_ref: &str, max_depth: u32) -> Result<UiaElement> {
 
 fn parse_window_ref(window_ref: &str) -> Result<u32> {
     if let Some(stripped) = window_ref.strip_prefix("0x") {
-        u32::from_str_radix(stripped, 16)
-            .map_err(|_| crate::error::DesktopCliError::AutomationError(
-                format!("Invalid window reference: {}", window_ref)
+        u32::from_str_radix(stripped, 16).map_err(|_| {
+            crate::error::DesktopCliError::AutomationError(format!(
+                "Invalid window reference: {}",
+                window_ref
             ))
+        })
     } else {
-        window_ref.parse::<u32>()
-            .map_err(|_| crate::error::DesktopCliError::AutomationError(
-                format!("Invalid window reference: {}", window_ref)
+        window_ref.parse::<u32>().map_err(|_| {
+            crate::error::DesktopCliError::AutomationError(format!(
+                "Invalid window reference: {}",
+                window_ref
             ))
+        })
     }
-    .and_then(|_window_id| {
-        super::window::get_window_info_by_id(_window_id).map(|info| info.pid)
-    })
+    .and_then(|_window_id| super::window::get_window_info_by_id(_window_id).map(|info| info.pid))
 }
 
 unsafe fn dump_element_recursive(
@@ -174,8 +176,10 @@ unsafe fn get_bounds(element: AXUIElementRef) -> (i32, i32, i32, i32) {
     let mut pos_value: CFTypeRef = std::ptr::null();
     let mut size_value: CFTypeRef = std::ptr::null();
 
-    let pos_result = AXUIElementCopyAttributeValue(element, pos_attr.as_concrete_TypeRef(), &mut pos_value);
-    let size_result = AXUIElementCopyAttributeValue(element, size_attr.as_concrete_TypeRef(), &mut size_value);
+    let pos_result =
+        AXUIElementCopyAttributeValue(element, pos_attr.as_concrete_TypeRef(), &mut pos_value);
+    let size_result =
+        AXUIElementCopyAttributeValue(element, size_attr.as_concrete_TypeRef(), &mut size_value);
 
     let (x, y) = if pos_result == 0 && !pos_value.is_null() {
         extract_point(pos_value)
@@ -209,14 +213,18 @@ unsafe fn extract_point(value: CFTypeRef) -> (i32, i32) {
 
     let x_val = CFDictionaryGetValue(dict_ref, x_key.as_concrete_TypeRef() as _);
     let x = if !x_val.is_null() {
-        CFNumber::wrap_under_get_rule(x_val as _).to_i32().unwrap_or(0)
+        CFNumber::wrap_under_get_rule(x_val as _)
+            .to_i32()
+            .unwrap_or(0)
     } else {
         0
     };
 
     let y_val = CFDictionaryGetValue(dict_ref, y_key.as_concrete_TypeRef() as _);
     let y = if !y_val.is_null() {
-        CFNumber::wrap_under_get_rule(y_val as _).to_i32().unwrap_or(0)
+        CFNumber::wrap_under_get_rule(y_val as _)
+            .to_i32()
+            .unwrap_or(0)
     } else {
         0
     };
@@ -234,14 +242,18 @@ unsafe fn extract_size(value: CFTypeRef) -> (i32, i32) {
 
     let w_val = CFDictionaryGetValue(dict_ref, w_key.as_concrete_TypeRef() as _);
     let w = if !w_val.is_null() {
-        CFNumber::wrap_under_get_rule(w_val as _).to_i32().unwrap_or(0)
+        CFNumber::wrap_under_get_rule(w_val as _)
+            .to_i32()
+            .unwrap_or(0)
     } else {
         0
     };
 
     let h_val = CFDictionaryGetValue(dict_ref, h_key.as_concrete_TypeRef() as _);
     let h = if !h_val.is_null() {
-        CFNumber::wrap_under_get_rule(h_val as _).to_i32().unwrap_or(0)
+        CFNumber::wrap_under_get_rule(h_val as _)
+            .to_i32()
+            .unwrap_or(0)
     } else {
         0
     };
@@ -269,11 +281,7 @@ fn detect_patterns(_element: AXUIElementRef, role: &str) -> Vec<String> {
 }
 
 #[cfg(target_os = "macos")]
-pub fn find_elements(
-    window_ref: &str,
-    selector: &str,
-    find_all: bool,
-) -> Result<Vec<UiaElement>> {
+pub fn find_elements(window_ref: &str, selector: &str, find_all: bool) -> Result<Vec<UiaElement>> {
     let tree = dump_tree(window_ref, 5)?;
     let mut results = Vec::new();
 
@@ -363,11 +371,9 @@ pub fn invoke_pattern(
 fn invoke_element(element_id: &str) -> Result<crate::rpc::types::PatternResult> {
     use crate::rpc::types::PatternResult;
 
-    let ptr: usize = usize::from_str_radix(element_id.trim_start_matches("0x"), 16)
-        .map_err(|_| {
-            crate::error::DesktopCliError::AutomationError(
-                "Invalid element ID".to_string(),
-            )
+    let ptr: usize =
+        usize::from_str_radix(element_id.trim_start_matches("0x"), 16).map_err(|_| {
+            crate::error::DesktopCliError::AutomationError("Invalid element ID".to_string())
         })?;
 
     let element = ptr as AXUIElementRef;
@@ -390,11 +396,9 @@ fn invoke_element(element_id: &str) -> Result<crate::rpc::types::PatternResult> 
 fn get_value_pattern(element_id: &str) -> Result<crate::rpc::types::PatternResult> {
     use crate::rpc::types::PatternResult;
 
-    let ptr: usize = usize::from_str_radix(element_id.trim_start_matches("0x"), 16)
-        .map_err(|_| {
-            crate::error::DesktopCliError::AutomationError(
-                "Invalid element ID".to_string(),
-            )
+    let ptr: usize =
+        usize::from_str_radix(element_id.trim_start_matches("0x"), 16).map_err(|_| {
+            crate::error::DesktopCliError::AutomationError("Invalid element ID".to_string())
         })?;
 
     let element = ptr as AXUIElementRef;
@@ -411,11 +415,9 @@ fn get_value_pattern(element_id: &str) -> Result<crate::rpc::types::PatternResul
 fn set_value_pattern(element_id: &str, _value: &str) -> Result<crate::rpc::types::PatternResult> {
     use crate::rpc::types::PatternResult;
 
-    let _ptr: usize = usize::from_str_radix(element_id.trim_start_matches("0x"), 16)
-        .map_err(|_| {
-            crate::error::DesktopCliError::AutomationError(
-                "Invalid element ID".to_string(),
-            )
+    let _ptr: usize =
+        usize::from_str_radix(element_id.trim_start_matches("0x"), 16).map_err(|_| {
+            crate::error::DesktopCliError::AutomationError("Invalid element ID".to_string())
         })?;
 
     Ok(PatternResult::err(

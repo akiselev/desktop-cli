@@ -205,9 +205,7 @@ pub fn focus_window(hwnd: &str) -> Result<()> {
         EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY,
         event,
     )
-    .map_err(|e| {
-        crate::error::DesktopCliError::Platform(format!("Failed to send event: {}", e))
-    })?;
+    .map_err(|e| crate::error::DesktopCliError::Platform(format!("Failed to send event: {}", e)))?;
     conn.flush().map_err(|e| {
         crate::error::DesktopCliError::Platform(format!("Failed to flush connection: {}", e))
     })?;

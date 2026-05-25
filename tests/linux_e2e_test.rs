@@ -33,13 +33,11 @@ impl GtkTestApp {
             return Err(format!("GTK app exited early with status: {}", status).into());
         }
 
-        let windows = desktop_cli::automation::linux::window::list_windows(None, Some("AT-SPI2 Test App"))?;
+        let windows =
+            desktop_cli::automation::linux::window::list_windows(None, Some("AT-SPI2 Test App"))?;
         let window_id = windows.first().map(|w| w.hwnd.clone());
 
-        Ok(GtkTestApp {
-            process,
-            window_id,
-        })
+        Ok(GtkTestApp { process, window_id })
     }
 
     fn hwnd(&self) -> Result<&str, Box<dyn std::error::Error>> {
@@ -226,13 +224,13 @@ fn test_invoke_pattern() {
         }
     };
 
-    let result = desktop_cli::automation::linux::atspi::invoke_pattern(
-        hwnd,
-        "Test Button",
-        "invoke",
-        None,
+    let result =
+        desktop_cli::automation::linux::atspi::invoke_pattern(hwnd, "Test Button", "invoke", None);
+    assert!(
+        result.is_ok(),
+        "invoke_pattern should succeed: {:?}",
+        result
     );
-    assert!(result.is_ok(), "invoke_pattern should succeed: {:?}", result);
 
     let pattern_result = result.unwrap();
     assert!(pattern_result.success, "Pattern invocation should succeed");
@@ -266,17 +264,16 @@ fn test_pattern_unsupported() {
         }
     };
 
-    let result = desktop_cli::automation::linux::atspi::invoke_pattern(
-        hwnd,
-        "Test Label",
-        "invoke",
-        None,
-    );
+    let result =
+        desktop_cli::automation::linux::atspi::invoke_pattern(hwnd, "Test Label", "invoke", None);
 
     assert!(result.is_ok(), "invoke_pattern should return result");
 
     let pattern_result = result.unwrap();
-    assert!(!pattern_result.success, "Pattern should not be supported on Label");
+    assert!(
+        !pattern_result.success,
+        "Pattern should not be supported on Label"
+    );
     assert!(
         pattern_result.error.is_some(),
         "Should provide error message for unsupported pattern"

@@ -215,7 +215,10 @@ fn test_cleanup() {
     println!("test_cleanup: PASSED");
 }
 
-fn contains_control_type(element: &desktop_cli::rpc::types::UiaElement, control_type: &str) -> bool {
+fn contains_control_type(
+    element: &desktop_cli::rpc::types::UiaElement,
+    control_type: &str,
+) -> bool {
     if element.control_type == control_type {
         return true;
     }

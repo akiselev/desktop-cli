@@ -93,9 +93,7 @@ pub fn click(
     if let Some((x, y)) = coords {
         macos::input::click_at_coords(x, y).map_err(|e| OpsError(e.to_string()))
     } else {
-        Err(OpsError(
-            "Coordinates required for macOS click".to_string(),
-        ))
+        Err(OpsError("Coordinates required for macOS click".to_string()))
     }
 }
 

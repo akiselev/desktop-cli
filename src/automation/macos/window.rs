@@ -23,9 +23,7 @@ pub fn list_windows(
 
     // Uses kCGWindowListOptionOnScreenOnly - only visible windows relevant for automation,
     // hidden/minimized not interactable. See Decision Log.
-    let window_list = unsafe {
-        CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, 0)
-    };
+    let window_list = unsafe { CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, 0) };
     if window_list.is_null() {
         return Ok(vec![]);
     }
@@ -34,9 +32,13 @@ pub fn list_windows(
     let mut result = Vec::new();
 
     for i in 0..windows.len() {
-        let Some(window_dict) = windows.get(i) else { continue; };
+        let Some(window_dict) = windows.get(i) else {
+            continue;
+        };
 
-        let Some(window_id) = get_dict_number(&window_dict, "kCGWindowNumber") else { continue; };
+        let Some(window_id) = get_dict_number(&window_dict, "kCGWindowNumber") else {
+            continue;
+        };
         let window_id = window_id as u32;
         let window_name = get_dict_string(&window_dict, "kCGWindowName").unwrap_or_default();
         let owner_name = get_dict_string(&window_dict, "kCGWindowOwnerName").unwrap_or_default();
@@ -49,12 +51,10 @@ pub fn list_windows(
         let bounds = get_window_bounds(&window_dict);
 
         // Case-insensitive filtering using to_lowercase().contains() pattern (conformance: matches Linux window.rs implementation)
-        let matches_exe = exe_filter.is_none_or(|filter| {
-            owner_name.to_lowercase().contains(&filter.to_lowercase())
-        });
-        let matches_title = title_filter.is_none_or(|filter| {
-            window_name.to_lowercase().contains(&filter.to_lowercase())
-        });
+        let matches_exe = exe_filter
+            .is_none_or(|filter| owner_name.to_lowercase().contains(&filter.to_lowercase()));
+        let matches_title = title_filter
+            .is_none_or(|filter| window_name.to_lowercase().contains(&filter.to_lowercase()));
 
         if matches_exe && matches_title {
             result.push(WindowInfo {
@@ -81,9 +81,7 @@ pub fn get_window_info_by_id(window_id: u32) -> Result<WindowInfo> {
     use core_foundation::dictionary::CFDictionary;
     use core_graphics::window::{kCGWindowListOptionOnScreenOnly, CGWindowListCopyWindowInfo};
 
-    let window_list = unsafe {
-        CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, 0)
-    };
+    let window_list = unsafe { CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, 0) };
     if window_list.is_null() {
         return Err(DesktopCliError::Platform(
             "Failed to retrieve window list from Core Graphics".to_string(),
@@ -93,13 +91,18 @@ pub fn get_window_info_by_id(window_id: u32) -> Result<WindowInfo> {
     let windows: CFArray<CFDictionary> = unsafe { CFArray::wrap_under_create_rule(window_list) };
 
     for i in 0..windows.len() {
-        let Some(window_dict) = windows.get(i) else { continue; };
-        let Some(wid) = get_dict_number(&window_dict, "kCGWindowNumber") else { continue; };
+        let Some(window_dict) = windows.get(i) else {
+            continue;
+        };
+        let Some(wid) = get_dict_number(&window_dict, "kCGWindowNumber") else {
+            continue;
+        };
         let wid = wid as u32;
 
         if wid == window_id {
             let window_name = get_dict_string(&window_dict, "kCGWindowName").unwrap_or_default();
-            let owner_name = get_dict_string(&window_dict, "kCGWindowOwnerName").unwrap_or_default();
+            let owner_name =
+                get_dict_string(&window_dict, "kCGWindowOwnerName").unwrap_or_default();
             let owner_pid = get_dict_number(&window_dict, "kCGWindowOwnerPID").unwrap_or(0) as u32;
             let bounds = get_window_bounds(&window_dict);
 
@@ -129,7 +132,10 @@ fn get_dict_string(dict: &core_foundation::dictionary::CFDictionary, key: &str) 
 
     unsafe {
         let key_cf = CFString::new(key);
-        let value = CFDictionaryGetValue(dict.as_concrete_TypeRef(), key_cf.as_concrete_TypeRef() as _);
+        let value = CFDictionaryGetValue(
+            dict.as_concrete_TypeRef(),
+            key_cf.as_concrete_TypeRef() as _,
+        );
         if value.is_null() {
             None
         } else {
@@ -148,7 +154,10 @@ fn get_dict_number(dict: &core_foundation::dictionary::CFDictionary, key: &str) 
 
     unsafe {
         let key_cf = CFString::new(key);
-        let value = CFDictionaryGetValue(dict.as_concrete_TypeRef(), key_cf.as_concrete_TypeRef() as _);
+        let value = CFDictionaryGetValue(
+            dict.as_concrete_TypeRef(),
+            key_cf.as_concrete_TypeRef() as _,
+        );
         if value.is_null() {
             None
         } else {
@@ -167,7 +176,10 @@ fn get_window_bounds(dict: &core_foundation::dictionary::CFDictionary) -> Window
 
     unsafe {
         let key_cf = CFString::new("kCGWindowBounds");
-        let bounds_val = CFDictionaryGetValue(dict.as_concrete_TypeRef(), key_cf.as_concrete_TypeRef() as _);
+        let bounds_val = CFDictionaryGetValue(
+            dict.as_concrete_TypeRef(),
+            key_cf.as_concrete_TypeRef() as _,
+        );
 
         if !bounds_val.is_null() {
             let bounds_dict = bounds_val as core_foundation_sys::dictionary::CFDictionaryRef;
@@ -178,7 +190,12 @@ fn get_window_bounds(dict: &core_foundation::dictionary::CFDictionary) -> Window
             let height = dict_get_number(bounds_dict, "Height").unwrap_or(0) as i32;
 
             if width >= 0 && height >= 0 {
-                return WindowRect { x, y, width: width as u32, height: height as u32 };
+                return WindowRect {
+                    x,
+                    y,
+                    width: width as u32,
+                    height: height as u32,
+                };
             }
         }
 
@@ -193,7 +210,10 @@ fn get_window_bounds(dict: &core_foundation::dictionary::CFDictionary) -> Window
 
 /// Raw helper to get a number from a CFDictionaryRef by string key.
 #[cfg(target_os = "macos")]
-unsafe fn dict_get_number(dict: core_foundation_sys::dictionary::CFDictionaryRef, key: &str) -> Option<i64> {
+unsafe fn dict_get_number(
+    dict: core_foundation_sys::dictionary::CFDictionaryRef,
+    key: &str,
+) -> Option<i64> {
     use core_foundation::base::TCFType;
     use core_foundation::number::CFNumber;
     use core_foundation::string::CFString;

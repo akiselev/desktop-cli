@@ -22,7 +22,9 @@ pub type Result<T> = std::result::Result<T, OpsError>;
 pub struct LinuxPlatform;
 
 fn take_screenshot(_hwnd: &str, _method: Option<&str>) -> Result<Screenshot> {
-    Err(OpsError("Screenshot functionality deferred to post-release".to_string()))
+    Err(OpsError(
+        "Screenshot functionality deferred to post-release".to_string(),
+    ))
 }
 
 fn dump_tree(hwnd: &str, max_depth: u32) -> Result<UiaElement> {

@@ -283,7 +283,9 @@ pub fn dump_tree(window_id: &str, max_depth: u32) -> Result<UiaElement> {
                 .map_err(|e| DesktopCliError::Platform(format!("Failed to set path: {}", e)))?
                 .build()
                 .await
-                .map_err(|e| DesktopCliError::Platform(format!("Failed to build accessible: {}", e)))?;
+                .map_err(|e| {
+                    DesktopCliError::Platform(format!("Failed to build accessible: {}", e))
+                })?;
 
             traverse_element(&accessible, 0, max_depth).await
         };

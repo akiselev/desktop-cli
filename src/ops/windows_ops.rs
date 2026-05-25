@@ -8,9 +8,7 @@ use crate::automation::windows::input::{
     send_keys as input_send_keys, type_text as input_type_text,
 };
 use crate::automation::windows::uia::{self, PatternOp, Selector, SummaryOptions, TreeDumpOptions};
-use crate::automation::windows::{
-    get_window_info, list_windows as list_windows_raw, parse_hwnd,
-};
+use crate::automation::windows::{get_window_info, list_windows as list_windows_raw, parse_hwnd};
 use crate::ops::traits::DesktopPlatform;
 use crate::rpc::types::{ElementRef, PatternResult, QueryResult, Screenshot, UiaElement};
 use uiautomation::types::Handle;
@@ -66,7 +64,9 @@ fn parse_hwnd_string(hwnd_str: &str) -> Result<HWND> {
 // ============================================================================
 
 fn take_screenshot(_hwnd_str: &str, _method: Option<&str>) -> Result<Screenshot> {
-    Err(OpsError("Screenshot functionality deferred to post-release".to_string()))
+    Err(OpsError(
+        "Screenshot functionality deferred to post-release".to_string(),
+    ))
 }
 
 // ============================================================================
