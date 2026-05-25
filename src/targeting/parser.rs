@@ -131,8 +131,7 @@ impl WindowQuery {
         let mut query = WindowQuery::default();
 
         // Check for index syntax (:1, :first, :last)
-        if input.starts_with(':') {
-            let index_str = &input[1..];
+        if let Some(index_str) = input.strip_prefix(':') {
             query.index = Some(parse_index(index_str)?);
             return Ok(query);
         }
@@ -277,8 +276,15 @@ mod tests {
 
     #[test]
     fn test_parse_title() {
+        // Exact match (case-insensitive)
         let q = WindowQuery::parse("title:PCB").unwrap();
         assert!(q.title.is_some());
+        assert!(q.title.as_ref().unwrap().matches("pcb"));
+        assert!(q.title.as_ref().unwrap().matches("PCB"));
+        assert!(!q.title.as_ref().unwrap().matches("My PCB Design")); // exact match, not contains
+
+        // Contains match with wildcards
+        let q = WindowQuery::parse("title:*PCB*").unwrap();
         assert!(q.title.as_ref().unwrap().matches("My PCB Design"));
 
         let q = WindowQuery::parse("title:*Draft*").unwrap();

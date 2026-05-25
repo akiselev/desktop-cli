@@ -1,6 +1,5 @@
 /// Instruction parser for validating and preprocessing natural language instructions
 /// Since we're using Gemini for interpretation, this mainly does validation and cleanup
-
 use crate::error::{DesktopCliError, Result};
 
 /// Parse and validate an instruction
@@ -40,9 +39,8 @@ pub fn validate_instructions(instructions: &[String]) -> Result<Vec<String>> {
         .iter()
         .enumerate()
         .map(|(i, inst)| {
-            parse_instruction(inst).map_err(|e| {
-                DesktopCliError::ConfigError(format!("Instruction {}: {}", i + 1, e))
-            })
+            parse_instruction(inst)
+                .map_err(|e| DesktopCliError::ConfigError(format!("Instruction {}: {}", i + 1, e)))
         })
         .collect();
 
@@ -54,15 +52,7 @@ pub fn validate_instructions(instructions: &[String]) -> Result<Vec<String>> {
 pub fn is_dangerous_instruction(instruction: &str) -> bool {
     let lower = instruction.to_lowercase();
     let dangerous_keywords = [
-        "delete",
-        "format",
-        "shutdown",
-        "reboot",
-        "rm -rf",
-        "del /f",
-        "erase",
-        "wipe",
-        "destroy",
+        "delete", "format", "shutdown", "reboot", "rm -rf", "del /f", "erase", "wipe", "destroy",
     ];
 
     dangerous_keywords

@@ -1,6 +1,10 @@
+#[cfg(windows)]
 use desktop_cli::automation::windows::uia::tree::{dump_tree, element_from_hwnd, element_to_uia};
+#[cfg(windows)]
 use desktop_cli::automation::windows::window::list_windows;
+#[cfg(windows)]
 use desktop_cli::rpc::types::TreeDumpOptions;
+#[cfg(windows)]
 use uiautomation::UIAutomation;
 
 #[test]
@@ -26,7 +30,10 @@ fn test_list_windows() {
 
     // Print first few windows for debugging
     for (i, window) in windows.iter().take(5).enumerate() {
-        println!("Window {}: title='{}', exe='{}'", i, window.title, window.executable);
+        println!(
+            "Window {}: title='{}', exe='{}'",
+            i, window.title, window.executable
+        );
     }
 }
 
@@ -47,7 +54,11 @@ fn test_element_from_hwnd() {
     let automation = UIAutomation::new().expect("Failed to initialize UIAutomation");
     let element = element_from_hwnd(&automation, hwnd);
 
-    assert!(element.is_ok(), "Failed to get element from HWND: {:?}", element.err());
+    assert!(
+        element.is_ok(),
+        "Failed to get element from HWND: {:?}",
+        element.err()
+    );
 
     let element = element.unwrap();
     let name = element.get_name().unwrap_or_default();
@@ -72,7 +83,7 @@ fn test_dump_tree() {
     let root = element_from_hwnd(&automation, hwnd).expect("Failed to get root element");
 
     let options = TreeDumpOptions {
-        max_depth: 2,  // Small depth for testing
+        max_depth: 2, // Small depth for testing
         prune_offscreen: true,
         prune_empty: true,
         max_list_items: 5,
@@ -88,7 +99,10 @@ fn test_dump_tree() {
     println!("Patterns: {:?}", tree.patterns);
 
     // Should have some basic properties
-    assert!(!tree.control_type.is_empty(), "Control type should not be empty");
+    assert!(
+        !tree.control_type.is_empty(),
+        "Control type should not be empty"
+    );
 }
 
 #[test]
@@ -122,5 +136,8 @@ fn test_element_to_uia_conversion() {
     println!("  Offscreen: {}", uia_element.is_offscreen);
 
     // Basic validation
-    assert!(!uia_element.control_type.is_empty(), "Should have a control type");
+    assert!(
+        !uia_element.control_type.is_empty(),
+        "Should have a control type"
+    );
 }

@@ -149,9 +149,15 @@ pub fn parse_query(input: &str) -> Result<Query, String> {
         let token = &tokens[i];
 
         match token.as_str() {
-            // Role-based: @button, @input, etc.
+            // Role-based: @button, @input, @button:nth(3), @input:enabled, etc.
             t if t.starts_with('@') => {
-                let role = &t[1..];
+                let rest = &t[1..];
+                // Split role from pseudo-selectors at first ':'
+                let (role, pseudo_part) = if let Some(colon_pos) = rest.find(':') {
+                    (&rest[..colon_pos], Some(&rest[colon_pos..]))
+                } else {
+                    (rest, None)
+                };
                 let control_types = role_to_control_types(role);
                 if control_types.is_empty() {
                     return Err(format!("Unknown role: @{}", role));
@@ -161,6 +167,12 @@ pub fn parse_query(input: &str) -> Result<Query, String> {
                     control_type: Some(control_types[0].to_string()),
                     ..Default::default()
                 });
+                // Process inline pseudo-selectors (e.g., :nth(3), :enabled)
+                if let Some(pseudo_str) = pseudo_part {
+                    for pseudo in pseudo_str.split(':').filter(|s| !s.is_empty()) {
+                        parse_pseudo(pseudo, &mut index, &mut state_filters, &mut selector_parts);
+                    }
+                }
             }
 
             // Text match: "Save", "*Save*", etc.
@@ -212,48 +224,7 @@ pub fn parse_query(input: &str) -> Result<Query, String> {
             // Pseudo-selectors: :nth(N), :enabled, :focus, etc.
             t if t.starts_with(':') => {
                 let pseudo = &t[1..];
-                if pseudo == "enabled" {
-                    state_filters.push(StateFilter::Enabled);
-                } else if pseudo == "disabled" {
-                    state_filters.push(StateFilter::Disabled);
-                } else if pseudo == "focus" || pseudo == "focused" {
-                    state_filters.push(StateFilter::Focused);
-                } else if pseudo == "visible" {
-                    state_filters.push(StateFilter::Visible);
-                } else if pseudo == "hidden" {
-                    state_filters.push(StateFilter::Hidden);
-                } else if pseudo == "first" {
-                    index = Some(QueryIndex::First);
-                } else if pseudo == "last" {
-                    index = Some(QueryIndex::Last);
-                } else if pseudo.starts_with("nth(") && pseudo.ends_with(')') {
-                    let n_str = &pseudo[4..pseudo.len() - 1];
-                    if let Ok(n) = n_str.parse::<usize>() {
-                        index = Some(QueryIndex::Nth(n));
-                    }
-                } else if pseudo.starts_with("contains(") && pseudo.ends_with(')') {
-                    let text = &pseudo[9..pseudo.len() - 1];
-                    let text = text.trim_matches('"').trim_matches('\'');
-                    let matcher = AttributeMatcher {
-                        name: "name".to_string(),
-                        op: MatchOp::Contains,
-                        value: text.to_string(),
-                    };
-                    if let Some(last) = selector_parts.last_mut() {
-                        last.attributes.push(matcher);
-                    }
-                } else if pseudo.starts_with("value(") && pseudo.ends_with(')') {
-                    let text = &pseudo[6..pseudo.len() - 1];
-                    let text = text.trim_matches('"').trim_matches('\'');
-                    let matcher = AttributeMatcher {
-                        name: "value".to_string(),
-                        op: MatchOp::Exact,
-                        value: text.to_string(),
-                    };
-                    if let Some(last) = selector_parts.last_mut() {
-                        last.attributes.push(matcher);
-                    }
-                }
+                parse_pseudo(pseudo, &mut index, &mut state_filters, &mut selector_parts);
             }
 
             // Spatial queries: ~below("label"), ~near(#id)
@@ -314,6 +285,56 @@ pub fn parse_query(input: &str) -> Result<Query, String> {
 }
 
 /// Tokenize query string, handling quoted strings
+fn parse_pseudo(
+    pseudo: &str,
+    index: &mut Option<QueryIndex>,
+    state_filters: &mut Vec<StateFilter>,
+    selector_parts: &mut Vec<SelectorSegment>,
+) {
+    if pseudo == "enabled" {
+        state_filters.push(StateFilter::Enabled);
+    } else if pseudo == "disabled" {
+        state_filters.push(StateFilter::Disabled);
+    } else if pseudo == "focus" || pseudo == "focused" {
+        state_filters.push(StateFilter::Focused);
+    } else if pseudo == "visible" {
+        state_filters.push(StateFilter::Visible);
+    } else if pseudo == "hidden" {
+        state_filters.push(StateFilter::Hidden);
+    } else if pseudo == "first" {
+        *index = Some(QueryIndex::First);
+    } else if pseudo == "last" {
+        *index = Some(QueryIndex::Last);
+    } else if pseudo.starts_with("nth(") && pseudo.ends_with(')') {
+        let n_str = &pseudo[4..pseudo.len() - 1];
+        if let Ok(n) = n_str.parse::<usize>() {
+            *index = Some(QueryIndex::Nth(n));
+        }
+    } else if pseudo.starts_with("contains(") && pseudo.ends_with(')') {
+        let text = &pseudo[9..pseudo.len() - 1];
+        let text = text.trim_matches('"').trim_matches('\'');
+        let matcher = AttributeMatcher {
+            name: "name".to_string(),
+            op: MatchOp::Contains,
+            value: text.to_string(),
+        };
+        if let Some(last) = selector_parts.last_mut() {
+            last.attributes.push(matcher);
+        }
+    } else if pseudo.starts_with("value(") && pseudo.ends_with(')') {
+        let text = &pseudo[6..pseudo.len() - 1];
+        let text = text.trim_matches('"').trim_matches('\'');
+        let matcher = AttributeMatcher {
+            name: "value".to_string(),
+            op: MatchOp::Exact,
+            value: text.to_string(),
+        };
+        if let Some(last) = selector_parts.last_mut() {
+            last.attributes.push(matcher);
+        }
+    }
+}
+
 fn tokenize(input: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut current = String::new();
@@ -407,7 +428,11 @@ pub fn apply_index_filter(elements: Vec<UiaElement>, index: &QueryIndex) -> Vec<
 }
 
 /// Check if element B is spatially related to anchor A
-pub fn check_spatial_relation(anchor: &UiaElement, candidate: &UiaElement, relation: SpatialRelation) -> bool {
+pub fn check_spatial_relation(
+    anchor: &UiaElement,
+    candidate: &UiaElement,
+    relation: SpatialRelation,
+) -> bool {
     let [ax, ay, aw, ah] = anchor.bounds;
     let [bx, by, bw, bh] = candidate.bounds;
 
@@ -421,15 +446,9 @@ pub fn check_spatial_relation(anchor: &UiaElement, candidate: &UiaElement, relat
             // B is below A if B's top is below A's bottom
             by > ay + ah && (bx < ax + aw && bx + bw > ax) // Overlapping horizontally
         }
-        SpatialRelation::Above => {
-            by + bh < ay && (bx < ax + aw && bx + bw > ax)
-        }
-        SpatialRelation::Right => {
-            bx > ax + aw && (by < ay + ah && by + bh > ay)
-        }
-        SpatialRelation::Left => {
-            bx + bw < ax && (by < ay + ah && by + bh > ay)
-        }
+        SpatialRelation::Above => by + bh < ay && (bx < ax + aw && bx + bw > ax),
+        SpatialRelation::Right => bx > ax + aw && (by < ay + ah && by + bh > ay),
+        SpatialRelation::Left => bx + bw < ax && (by < ay + ah && by + bh > ay),
         SpatialRelation::Near => {
             // Within 100 pixels
             let dist_x = (a_center_x - b_center_x).abs();
@@ -519,7 +538,10 @@ mod tests {
     #[test]
     fn test_parse_contains() {
         let query = parse_query("\"*Save*\"").unwrap();
-        assert_eq!(query.selector.segments[0].attributes[0].op, MatchOp::Contains);
+        assert_eq!(
+            query.selector.segments[0].attributes[0].op,
+            MatchOp::Contains
+        );
     }
 
     #[test]

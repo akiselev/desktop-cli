@@ -2,7 +2,9 @@
 
 use crate::agent::types::{AgentAction, PlannerResponse};
 use crate::error::{GeminiError, GeminiResult};
-use crate::gemini::schema::{Content, GenerationConfig, GeminiRequest, GeminiResponse, InlineData, Part};
+use crate::gemini::schema::{
+    Content, GeminiRequest, GeminiResponse, GenerationConfig, InlineData, Part,
+};
 use reqwest::Client;
 use serde_json::Value;
 use std::time::Duration;
@@ -306,10 +308,7 @@ Respond with JSON:
         let action = match action_type {
             "click" => AgentAction::Click {
                 target: raw["target"].as_str().unwrap_or("").to_string(),
-                click_type: raw["click_type"]
-                    .as_str()
-                    .unwrap_or("left")
-                    .to_string(),
+                click_type: raw["click_type"].as_str().unwrap_or("left").to_string(),
             },
             "type" => AgentAction::Type {
                 text: raw["text"].as_str().unwrap_or("").to_string(),
@@ -326,7 +325,10 @@ Respond with JSON:
                 ms: raw["ms"].as_u64().unwrap_or(500),
             },
             "done" => AgentAction::Done {
-                reason: raw["reason"].as_str().unwrap_or("Goal achieved").to_string(),
+                reason: raw["reason"]
+                    .as_str()
+                    .unwrap_or("Goal achieved")
+                    .to_string(),
             },
             "fail" => AgentAction::Fail {
                 reason: raw["reason"]

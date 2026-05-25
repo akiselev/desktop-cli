@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            e2e: docker
+          - os: windows-latest
+            e2e: native
+          - os: macos-latest
+            e2e: skip
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install Linux dependencies
+        if: matrix.e2e == 'docker'
+        run: sudo apt-get update && sudo apt-get install -y libxdo-dev
+
+      - name: Build Docker (Linux)
+        if: matrix.e2e == 'docker'
+        run: docker build -t desktop-cli-test .
+
+      - name: Run E2E tests in Docker (Linux)
+        if: matrix.e2e == 'docker'
+        timeout-minutes: 3
+        run: |
+          docker run --rm --init \
+            -e RUST_BACKTRACE=1 \
+            desktop-cli-test 2>&1
+
+      - name: Run unit tests (Linux)
+        if: matrix.e2e == 'docker'
+        run: cargo test --lib --no-fail-fast
+
+      - name: Run tests (Windows)
+        if: matrix.e2e == 'native'
+        run: cargo test -- --test-threads=1
+
+      - name: Run unit tests (macOS)
+        if: matrix.e2e == 'skip'
+        run: cargo test --lib
+
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        run: sudo apt-get update && sudo apt-get install -y libxdo-dev
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Docker images
+        run: |
+          docker build -t desktop-cli-test .
+          docker build -f Dockerfile.tutorial -t desktop-cli-tutorial .
+
+      - name: Generate tutorials
+        timeout-minutes: 3
+        run: |
+          CONTAINER_ID=$(docker create desktop-cli-tutorial)
+          docker start -a "$CONTAINER_ID" || true
+          docker cp "$CONTAINER_ID:/app/docs/src/tutorials/" docs/src/tutorials/ 2>/dev/null || true
+          docker rm "$CONTAINER_ID"
+        continue-on-error: true
+
+      - name: Check for tutorial drift
+        run: |
+          if ! git diff --exit-code docs/src/tutorials/; then
+            echo "::warning::Generated tutorials differ from committed versions"
+          fi
+
+      - name: Install mdBook
+        run: |
+          mkdir -p "$HOME/bin"
+          MDBOOK_VERSION=$(curl -sI https://github.com/rust-lang/mdBook/releases/latest | grep -i '^location:' | sed 's|.*/tag/v||' | tr -d '\r')
+          curl -sSL "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz" | tar xz -C "$HOME/bin"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Build documentation
+        run: mdbook build docs/

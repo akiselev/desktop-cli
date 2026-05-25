@@ -92,12 +92,9 @@ impl GeminiClient {
             });
         }
 
-        let gemini_response = response
-            .json::<GeminiResponse>()
-            .await
-            .map_err(|e| {
-                GeminiError::InvalidSchema(format!("Failed to parse Gemini response: {}", e))
-            })?;
+        let gemini_response = response.json::<GeminiResponse>().await.map_err(|e| {
+            GeminiError::InvalidSchema(format!("Failed to parse Gemini response: {}", e))
+        })?;
 
         // Log token usage if available
         if let Some(usage) = &gemini_response.usage_metadata {

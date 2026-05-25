@@ -1,0 +1,10 @@
+[book]
+title = "Desktop CLI Documentation"
+authors = ["Alexander Kiselev"]
+description = "Cross-platform desktop automation CLI optimized for LLM agents"
+src = "src"
+language = "en"
+
+[output.html]
+git-repository-url = "https://github.com/akiselev/desktop-cli"
+edit-url-template = "https://github.com/akiselev/desktop-cli/edit/master/docs/{path}"

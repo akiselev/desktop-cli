@@ -1,0 +1,23 @@
+# Build artifacts
+target/
+*.rs.bk
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Documentation (not needed for tests, except templates for tutorial generation)
+docs/
+!docs/templates/
+*.md
+!tests/fixtures/**/README.md
+
+# Local config
+.env
+.env.local

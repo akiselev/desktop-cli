@@ -15,9 +15,7 @@ use windows::Win32::Foundation::HWND;
 #[derive(Debug, Clone)]
 pub enum ResolutionError {
     /// No windows matched the query
-    NoWindowMatch {
-        query: String,
-    },
+    NoWindowMatch { query: String },
     /// Multiple windows matched and couldn't be disambiguated
     AmbiguousWindow {
         query: String,
@@ -61,12 +59,7 @@ impl fmt::Display for ResolutionError {
                 write!(f, "Tip: Use ':1', ':2', etc. or refine with 'title:...'")
             }
             ResolutionError::AmbiguousElement { selector, windows } => {
-                writeln!(
-                    f,
-                    "Found '{}' in {} windows:",
-                    selector,
-                    windows.len()
-                )?;
+                writeln!(f, "Found '{}' in {} windows:", selector, windows.len())?;
                 for (i, w) in windows.iter().enumerate() {
                     writeln!(
                         f,
@@ -223,7 +216,10 @@ pub fn resolve_window(
     }
 }
 
-fn resolve_by_index(index: &IndexSpec, windows: &[WindowInfo]) -> Result<WindowInfo, ResolutionError> {
+fn resolve_by_index(
+    index: &IndexSpec,
+    windows: &[WindowInfo],
+) -> Result<WindowInfo, ResolutionError> {
     if windows.is_empty() {
         return Err(ResolutionError::NoWindowMatch {
             query: format!("{:?}", index),
@@ -316,6 +312,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::automation::types::WindowRect;
 
     fn make_windows() -> Vec<WindowInfo> {
         vec![
@@ -323,6 +320,12 @@ mod tests {
                 hwnd: "0x1234".to_string(),
                 title: "Altium Designer - PCB1.PcbDoc".to_string(),
                 executable: "Altium.exe".to_string(),
+                rect: WindowRect {
+                    x: 0,
+                    y: 0,
+                    width: 800,
+                    height: 600,
+                },
                 pid: 1000,
                 class_name: Some("TfrmAltium".to_string()),
             },
@@ -330,6 +333,12 @@ mod tests {
                 hwnd: "0x5678".to_string(),
                 title: "Altium Designer - Schematic1.SchDoc".to_string(),
                 executable: "Altium.exe".to_string(),
+                rect: WindowRect {
+                    x: 0,
+                    y: 0,
+                    width: 800,
+                    height: 600,
+                },
                 pid: 1000,
                 class_name: Some("TfrmAltium".to_string()),
             },
@@ -337,6 +346,12 @@ mod tests {
                 hwnd: "0x9ABC".to_string(),
                 title: "Untitled - Notepad".to_string(),
                 executable: "notepad.exe".to_string(),
+                rect: WindowRect {
+                    x: 0,
+                    y: 0,
+                    width: 800,
+                    height: 600,
+                },
                 pid: 2000,
                 class_name: Some("Notepad".to_string()),
             },
@@ -371,14 +386,18 @@ mod tests {
 
         let query = WindowQuery::parse("altium").unwrap();
         let result = resolve_window(&query, &windows);
-        assert!(matches!(result, Err(ResolutionError::AmbiguousWindow { .. })));
+        assert!(matches!(
+            result,
+            Err(ResolutionError::AmbiguousWindow { .. })
+        ));
     }
 
     #[test]
     fn test_resolve_by_title() {
         let windows = make_windows();
 
-        let query = WindowQuery::parse("title:PCB").unwrap();
+        // Use wildcard for contains match
+        let query = WindowQuery::parse("title:*PCB*").unwrap();
         let result = resolve_window(&query, &windows).unwrap();
         assert!(result.title.contains("PCB"));
     }

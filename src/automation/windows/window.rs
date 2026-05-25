@@ -3,11 +3,16 @@ use crate::error::{DesktopCliError, Result};
 use regex::Regex;
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
-use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT, PROCESS_NAME_WIN32, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
-use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible};
+use windows::Win32::System::Threading::{
+    OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT, PROCESS_NAME_WIN32,
+    PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    EnumWindows, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
+};
 
 /// List all visible windows, optionally filtered by executable and/or title pattern.
-/// 
+///
 /// By default, windows belonging to the current process and its ancestor processes
 /// (e.g., the terminal running this CLI) are excluded to prevent self-matching.
 pub fn list_windows(
@@ -27,14 +32,12 @@ pub fn list_windows_include_self(
 
 /// Get the parent process ID for a given process.
 fn get_parent_pid(pid: u32) -> Option<u32> {
-    use windows::Win32::System::Threading::{
-        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-    };
     use windows::Wdk::System::Threading::{NtQueryInformationProcess, ProcessBasicInformation};
-    
+    use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
-        
+
         #[repr(C)]
         struct ProcessBasicInfo {
             reserved1: *mut std::ffi::c_void,
@@ -43,10 +46,10 @@ fn get_parent_pid(pid: u32) -> Option<u32> {
             unique_process_id: usize,
             inherited_from_unique_process_id: usize,
         }
-        
+
         let mut info: ProcessBasicInfo = std::mem::zeroed();
         let mut return_length = 0u32;
-        
+
         let status = NtQueryInformationProcess(
             handle,
             ProcessBasicInformation,
@@ -54,9 +57,9 @@ fn get_parent_pid(pid: u32) -> Option<u32> {
             std::mem::size_of::<ProcessBasicInfo>() as u32,
             &mut return_length,
         );
-        
+
         let _ = windows::Win32::Foundation::CloseHandle(handle);
-        
+
         if status.is_ok() && info.inherited_from_unique_process_id != 0 {
             Some(info.inherited_from_unique_process_id as u32)
         } else {
@@ -69,7 +72,7 @@ fn get_parent_pid(pid: u32) -> Option<u32> {
 fn get_ancestor_pids(start_pid: u32) -> std::collections::HashSet<u32> {
     let mut ancestors = std::collections::HashSet::new();
     ancestors.insert(start_pid);
-    
+
     let mut current = start_pid;
     // Walk up to 10 levels to avoid infinite loops from circular references
     for _ in 0..10 {
@@ -81,7 +84,7 @@ fn get_ancestor_pids(start_pid: u32) -> std::collections::HashSet<u32> {
             _ => break,
         }
     }
-    
+
     ancestors
 }
 
@@ -91,7 +94,7 @@ fn list_windows_impl(
     exclude_own_process: bool,
 ) -> Result<Vec<WindowInfo>> {
     let mut windows = Vec::new();
-    
+
     // Collect our own PID and all ancestor PIDs (terminal, shell, etc.)
     let excluded_pids = if exclude_own_process {
         get_ancestor_pids(std::process::id())
@@ -260,7 +263,8 @@ pub fn get_window_info(hwnd: HWND) -> Result<WindowInfo> {
 
         // Get window class name
         let mut class_buf = vec![0u16; 256];
-        let class_len = windows::Win32::UI::WindowsAndMessaging::GetClassNameW(hwnd, &mut class_buf);
+        let class_len =
+            windows::Win32::UI::WindowsAndMessaging::GetClassNameW(hwnd, &mut class_buf);
         let class_name = if class_len > 0 {
             Some(String::from_utf16_lossy(&class_buf[..class_len as usize]))
         } else {
@@ -269,8 +273,9 @@ pub fn get_window_info(hwnd: HWND) -> Result<WindowInfo> {
 
         // Get window rect
         let mut rect = RECT::default();
-        GetWindowRect(hwnd, &mut rect)
-            .map_err(|e| DesktopCliError::AutomationError(format!("GetWindowRect failed: {}", e)))?;
+        GetWindowRect(hwnd, &mut rect).map_err(|e| {
+            DesktopCliError::AutomationError(format!("GetWindowRect failed: {}", e))
+        })?;
 
         Ok(WindowInfo {
             hwnd: format!("{}", hwnd.0 as isize),

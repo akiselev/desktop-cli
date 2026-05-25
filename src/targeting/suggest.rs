@@ -15,7 +15,10 @@ pub struct WindowQuerySuggestions {
 }
 
 /// Generate query suggestions for a specific window
-pub fn suggest_queries(target_hwnd: &str, all_windows: &[WindowInfo]) -> Option<WindowQuerySuggestions> {
+pub fn suggest_queries(
+    target_hwnd: &str,
+    all_windows: &[WindowInfo],
+) -> Option<WindowQuerySuggestions> {
     let target = all_windows.iter().find(|w| w.hwnd == target_hwnd)?;
     let mut suggestions = WindowQuerySuggestions::default();
 
@@ -31,7 +34,11 @@ pub fn suggest_queries(target_hwnd: &str, all_windows: &[WindowInfo]) -> Option<
     let exe_base = extract_exe_name(&target.executable);
     let exe_matches = all_windows
         .iter()
-        .filter(|w| w.executable.to_lowercase().contains(&exe_base.to_lowercase()))
+        .filter(|w| {
+            w.executable
+                .to_lowercase()
+                .contains(&exe_base.to_lowercase())
+        })
         .count();
 
     if exe_matches == 1 {
@@ -59,7 +66,9 @@ pub fn suggest_queries(target_hwnd: &str, all_windows: &[WindowInfo]) -> Option<
             suggestions.unique.push(format!("title:{}", keyword));
         } else if matches > 1 && matches < all_windows.len() {
             // Only add as shared if it's more specific than "all windows"
-            suggestions.shared.push((format!("title:{}", keyword), matches));
+            suggestions
+                .shared
+                .push((format!("title:{}", keyword), matches));
         }
     }
 
@@ -68,7 +77,9 @@ pub fn suggest_queries(target_hwnd: &str, all_windows: &[WindowInfo]) -> Option<
     if pid_matches == 1 {
         suggestions.unique.push(format!("pid:{}", target.pid));
     } else if pid_matches > 1 {
-        suggestions.shared.push((format!("pid:{}", target.pid), pid_matches));
+        suggestions
+            .shared
+            .push((format!("pid:{}", target.pid), pid_matches));
     }
 
     Some(suggestions)
@@ -221,7 +232,11 @@ fn find_unique_title_component(
     // Find windows with same exe
     let same_exe: Vec<_> = all_windows
         .iter()
-        .filter(|w| w.executable.to_lowercase().contains(&exe_filter.to_lowercase()))
+        .filter(|w| {
+            w.executable
+                .to_lowercase()
+                .contains(&exe_filter.to_lowercase())
+        })
         .collect();
 
     if same_exe.len() <= 1 {
@@ -249,13 +264,22 @@ fn truncate(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len - 3])
+        // Find a valid char boundary at or before max_len - 3
+        let target = max_len.saturating_sub(3);
+        let boundary = s
+            .char_indices()
+            .take_while(|(i, _)| *i <= target)
+            .last()
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+        format!("{}...", &s[..boundary])
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::automation::types::WindowRect;
 
     fn make_windows() -> Vec<WindowInfo> {
         vec![
@@ -263,6 +287,12 @@ mod tests {
                 hwnd: "0x1234".to_string(),
                 title: "Altium Designer - PCB1.PcbDoc".to_string(),
                 executable: "C:\\Program Files\\Altium\\Altium.exe".to_string(),
+                rect: WindowRect {
+                    x: 0,
+                    y: 0,
+                    width: 800,
+                    height: 600,
+                },
                 pid: 1000,
                 class_name: Some("TfrmAltium".to_string()),
             },
@@ -270,6 +300,12 @@ mod tests {
                 hwnd: "0x5678".to_string(),
                 title: "Altium Designer - Schematic1.SchDoc".to_string(),
                 executable: "C:\\Program Files\\Altium\\Altium.exe".to_string(),
+                rect: WindowRect {
+                    x: 0,
+                    y: 0,
+                    width: 800,
+                    height: 600,
+                },
                 pid: 1000,
                 class_name: Some("TfrmAltium".to_string()),
             },
@@ -277,6 +313,12 @@ mod tests {
                 hwnd: "0x9ABC".to_string(),
                 title: "Untitled - Notepad".to_string(),
                 executable: "C:\\Windows\\notepad.exe".to_string(),
+                rect: WindowRect {
+                    x: 0,
+                    y: 0,
+                    width: 800,
+                    height: 600,
+                },
                 pid: 2000,
                 class_name: Some("Notepad".to_string()),
             },
