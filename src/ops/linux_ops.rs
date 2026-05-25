@@ -78,23 +78,52 @@ fn focus_window(hwnd: &str) -> Result<()> {
 
 fn click(
     hwnd: &str,
-    _selector: &str,
+    selector: &str,
     coords: Option<(i32, i32)>,
     _button: Option<&str>,
 ) -> Result<()> {
     focus_window(hwnd)?;
+
     if let Some((x, y)) = coords {
-        linux::input::click_at_coords(x, y).map_err(|e| OpsError(e.to_string()))
-    } else {
-        Err(OpsError(
-            "Coordinates required for Linux click (selector-based click not yet implemented)"
-                .to_string(),
-        ))
+        return linux::input::click_at_coords(x, y).map_err(|e| OpsError(e.to_string()));
     }
+
+    if !selector.is_empty() {
+        let elements = find_elements(hwnd, selector, false)?;
+        let Some(element) = elements.first() else {
+            return Err(OpsError(format!(
+                "No element found matching '{}'",
+                selector
+            )));
+        };
+
+        let [x, y, width, height] = element.bounds;
+        if width <= 0 || height <= 0 {
+            return Err(OpsError(format!(
+                "Element '{}' has invalid bounds: {:?}",
+                selector, element.bounds
+            )));
+        }
+
+        let center_x = x + width / 2;
+        let center_y = y + height / 2;
+        return linux::input::click_at_coords(center_x, center_y)
+            .map_err(|e| OpsError(e.to_string()));
+    }
+
+    Err(OpsError(
+        "Either coordinates or selector required for Linux click".to_string(),
+    ))
 }
 
-fn type_text(hwnd: &str, text: &str, _selector: Option<&str>) -> Result<()> {
-    focus_window(hwnd)?;
+fn type_text(hwnd: &str, text: &str, selector: Option<&str>) -> Result<()> {
+    if let Some(selector) = selector.filter(|selector| !selector.is_empty()) {
+        click(hwnd, selector, None, None)?;
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    } else {
+        focus_window(hwnd)?;
+    }
+
     linux::input::type_text(text).map_err(|e| OpsError(e.to_string()))
 }
 
