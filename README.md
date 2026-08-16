@@ -4,9 +4,11 @@
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://akiselev.github.io/desktop-cli/)
 [![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-green)](LICENSE)
 
-A cross-platform desktop automation CLI optimized for LLM agents. Control desktop applications through native accessibility APIs on Windows, Linux, and macOS.
+> **Experimental.** The command and selector interfaces may change while platform support is still being developed.
 
-## Platform Support
+A cross-platform desktop automation CLI built on native accessibility APIs for Windows, Linux, and macOS. It exposes compact summaries, structured output, selectors, and input actions suitable for scripts and other automation.
+
+## Platform support
 
 | Platform | Accessibility API | Input Simulation | Status |
 |----------|------------------|------------------|--------|
@@ -14,7 +16,7 @@ A cross-platform desktop automation CLI optimized for LLM agents. Control deskto
 | Linux    | AT-SPI2 + X11 | enigo (libxdo) | Stable |
 | macOS    | Cocoa Accessibility | enigo (CGEvent) | In Development |
 
-## Quick Start
+## Quick start
 
 ```bash
 # Install
@@ -23,18 +25,18 @@ cargo install desktop-cli
 # List windows
 desktop windows
 
-# Get a compact UI summary (optimized for LLM consumption)
+# Get a compact UI summary
 desktop summary notepad
 ```
 
 ## Features
 
-- **Cross-Platform**: Native accessibility APIs on Windows, Linux, and macOS
-- **LLM-Optimized Output**: Compact, categorized UI summaries that maximize signal-to-noise ratio
-- **Enhanced Query Language**: Intuitive `@role` selector syntax designed for AI agents
-- **Smart Window Targeting**: Target windows by name, title, index, or let the CLI auto-disambiguate using element selectors
-- **Semantic Role Detection**: Automatic classification of UI elements (button, input, menu, etc.)
-- **Spatial Queries**: Find elements by position relative to other elements
+- **Cross-platform accessibility**: native accessibility APIs on Windows, Linux, and macOS
+- **Compact structured output**: categorized UI summaries plus JSON output for programmatic use
+- **Selector language**: `@role` syntax for finding UI elements
+- **Window targeting**: target windows by name, title, index, or element selector
+- **Semantic role detection**: classify UI elements such as buttons, inputs, and menus
+- **Spatial queries**: find elements by position relative to other elements
 
 ## Usage
 
@@ -42,7 +44,7 @@ desktop summary notepad
 # Discover windows
 desktop windows --exe firefox
 
-# Get UI state (use after every action)
+# Get UI state
 desktop summary :1
 
 # Find elements
@@ -58,7 +60,7 @@ desktop scroll notepad down --amount 5
 desktop do notepad click "@button 'Save'"
 ```
 
-## Window Targeting
+## Window targeting
 
 | Query | Description |
 |-------|-------------|
@@ -71,17 +73,17 @@ desktop do notepad click "@button 'Save'"
 
 When multiple windows match, the CLI tries the element selector on each and auto-selects the right one.
 
-## For LLM Agents
+## Automation workflow
 
-Desktop CLI is designed as a tool for LLM agents to control desktop applications:
+A typical programmatic workflow is:
 
-1. **Start with `desktop windows`** to discover available windows
-2. **Use `desktop summary`** after every action to understand UI state changes
-3. **Use `@role` selectors** (`@button "Save"`, `@input:first`) for reliable element targeting
-4. **Use `desktop do`** for combined find-and-act operations
-5. **Use `--json` output** for machine-readable responses
+1. Use `desktop windows` to discover available windows.
+2. Use `desktop summary` after actions to inspect UI state changes.
+3. Use `@role` selectors such as `@button "Save"` or `@input:first` for element targeting.
+4. Use `desktop do` for combined find-and-act operations.
+5. Use `--json` for machine-readable responses.
 
-See [AGENT.md](AGENT.md) for detailed LLM agent instructions.
+See [AGENT.md](AGENT.md) for additional automation guidance.
 
 ## Documentation
 
