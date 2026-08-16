@@ -79,12 +79,12 @@ struct Worker { _automation:UIAutomation, walker:UITreeWalker, cache:uiautomatio
 fn worker_main(hwnd:isize,rx:Receiver<Command>){
     let mut state=Worker::new(hwnd).map_err(|e|e.to_string());
     while let Ok(command)=rx.recv(){match command{
-        Command::Ping{reply}=>{let _=reply.send(state.as_ref().map(|_|()).map_err(Clone::clone));}
-        Command::Roots{reply}=>{let _=reply.send(state.as_mut().map_err(Clone::clone).and_then(Worker::roots));}
-        Command::Inspect{identity,mask,reply}=>{let _=reply.send(state.as_mut().map_err(Clone::clone).and_then(|s|s.inspect(&identity,mask)));}
-        Command::Children{identity,range,reply}=>{let _=reply.send(state.as_mut().map_err(Clone::clone).and_then(|s|s.children(&identity,range)));}
-        Command::Perform{identity,request,reply}=>{let _=reply.send(state.as_mut().map_err(Clone::clone).and_then(|s|s.perform(&identity,request)));}
-        Command::Text{identity,query,reply}=>{let _=reply.send(state.as_mut().map_err(Clone::clone).and_then(|s|s.text(&identity,query)));}
+        Command::Ping{reply}=>{let _=reply.send(state.as_ref().map(|_|()).map_err(|e|(*e).clone()));}
+        Command::Roots{reply}=>{let _=reply.send(state.as_mut().map_err(|e|(*e).clone()).and_then(Worker::roots));}
+        Command::Inspect{identity,mask,reply}=>{let _=reply.send(state.as_mut().map_err(|e|(*e).clone()).and_then(|s|s.inspect(&identity,mask)));}
+        Command::Children{identity,range,reply}=>{let _=reply.send(state.as_mut().map_err(|e|(*e).clone()).and_then(|s|s.children(&identity,range)));}
+        Command::Perform{identity,request,reply}=>{let _=reply.send(state.as_mut().map_err(|e|(*e).clone()).and_then(|s|s.perform(&identity,request)));}
+        Command::Text{identity,query,reply}=>{let _=reply.send(state.as_mut().map_err(|e|(*e).clone()).and_then(|s|s.text(&identity,query)));}
     }}
 }
 
