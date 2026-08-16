@@ -1,10 +1,12 @@
-//! LLM-driven automation agent
+//! LLM-driven automation agent.
 //!
-//! Takes natural language instructions and uses Gemini to plan and execute
-//! a series of UI actions to achieve the goal.
+//! The semantic module is model-independent and is the canonical planner contract.
+//! The Gemini planner remains as a compatibility adapter while it is migrated.
 
 pub mod planner;
+pub mod semantic;
 pub mod types;
 
 pub use planner::AgentPlanner;
+pub use semantic::{AgentCommand as SemanticAgentCommand, PlannerContext as SemanticPlannerContext};
 pub use types::*;

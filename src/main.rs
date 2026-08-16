@@ -1,635 +1,127 @@
-#![allow(dead_code)]
-#![allow(unused_imports)]
-
-mod agent;
-mod automation;
-mod error;
-mod executor;
-mod gemini;
-mod ops;
-mod rpc;
-mod targeting;
-
 use clap::{Parser, Subcommand};
-use targeting::{
-    format_suggestions, format_window_list, format_window_list_json, resolve_window,
-    resolve_with_element, WindowQuery,
-};
+use desktop_cli::packs::{self, ApplicationPack};
+use desktop_cli::providers::{LegacyAccessibilityBackend, LegacyInputBackend};
+use desktop_cli::semantic::{ActionValue, ObservationBudget, SemanticAction};
+use desktop_cli::session::DesktopSession;
+use desktop_cli::{ops, rpc, targeting};
+use targeting::{format_suggestions, format_window_list, format_window_list_json, resolve_window, resolve_with_element, WindowQuery};
+use std::path::PathBuf;
 
-/// Desktop CLI - Control desktop applications through accessibility APIs
-///
-/// A cross-platform desktop automation tool optimized for LLM agents.
 #[derive(Parser, Debug)]
-#[command(name = "desktop", author, version, about, long_about = None)]
+#[command(name="desktop", author, version, about="Semantic cross-platform desktop control for agents")]
 struct Cli {
-    /// Override window target (exe name, title:X, :index, hwnd:X, etc.)
-    #[arg(global = true, short = 't', long = "target")]
+    #[arg(global=true, short='t', long="target")]
     target: Option<String>,
-
     #[command(subcommand)]
     command: Commands,
 }
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// List visible windows with query hints
-    ///
-    /// Shows all visible windows with useful information for targeting.
-    /// Use --json for machine-readable output, --suggest for query hints.
-    Windows {
-        /// Filter by executable name (substring match)
-        #[arg(long)]
-        exe: Option<String>,
+    Windows { #[arg(long)] exe: Option<String>, #[arg(long)] title: Option<String>, #[arg(long)] json: bool, #[arg(long)] suggest: Option<String> },
+    Observe { window: Option<String>, #[arg(long)] pack: Option<String>, #[arg(long, default_value_t=300)] max_nodes: usize, #[arg(long, default_value_t=40)] max_items: usize, #[arg(long, default_value_t=24_000)] max_text: usize, #[arg(long, default_value_t=16)] depth: u32 },
+    Inspect { window: String, selector: String, #[arg(long)] pack: Option<String>, #[arg(long, default_value_t=16)] depth: u32 },
+    Query { window: String, selector: String, #[arg(long)] pack: Option<String>, #[arg(long)] explain: bool, #[arg(long, default_value_t=16)] depth: u32 },
+    Action { window: String, target: String, action: String, #[arg(long)] value: Option<String>, #[arg(long)] pack: Option<String>, #[arg(long)] input_fallback: bool, #[arg(long, default_value_t=16)] depth: u32 },
+    Snapshot { window: String, #[arg(long)] output: Option<PathBuf>, #[arg(long, default_value_t=24)] depth: u32 },
+    Pack { #[command(subcommand)] command: PackCommands },
+    Serve { window: String, #[arg(long)] pack: Option<String>, #[arg(long, default_value_t=24)] depth: u32 },
+    Summary { window: Option<String>, #[arg(long, default_value="json")] format: String, #[arg(long)] bounds: bool, #[arg(long)] paths: bool, #[arg(long)] region: Option<String>, #[arg(long, default_value_t=10)] depth: u32, #[arg(long)] roles: Option<String> },
+    Click { window: String, selector: Option<String>, #[arg(long, short='k', default_value="left")] kind: String, #[arg(long, short='c')] coords: Option<String> },
+    Type { window: String, selector: String, #[arg(long)] value: String },
+    Keys { window: String, keys: String },
+    Scroll { window: String, direction: String, #[arg(long, short='n', default_value_t=3)] amount: i32 },
+    DumpTree { window: String, #[arg(long, default_value_t=5)] depth: u32, #[arg(long)] json: bool },
+    FindElement { window: String, selector: String, #[arg(long)] all: bool },
+    Invoke { window: String, selector: String, #[arg(long)] pattern: String, #[arg(long)] value: Option<String> },
+    Do { window: String, action: String, target: String, #[arg(long)] value: Option<String> },
+}
 
-        /// Filter by window title (substring match)
-        #[arg(long)]
-        title: Option<String>,
-
-        /// Output as JSON (for agents)
-        #[arg(long)]
-        json: bool,
-
-        /// Show query suggestions for this HWND
-        #[arg(long)]
-        suggest: Option<String>,
-    },
-
-    /// Get a compact UI summary optimized for LLM consumption
-    ///
-    /// Returns categorized elements (actions, navigation, content) with
-    /// minimal noise. Use this after every action to understand UI state.
-    Summary {
-        /// Window query (e.g., "notepad", ":1", "title:PCB")
-        window: Option<String>,
-
-        /// Output format: json (default), text
-        #[arg(long, default_value = "json")]
-        format: String,
-
-        /// Include bounding boxes in output
-        #[arg(long)]
-        bounds: bool,
-
-        /// Include full hierarchy paths
-        #[arg(long)]
-        paths: bool,
-
-        /// Focus on region: x,y,w,h (e.g., "100,200,300,400")
-        #[arg(long)]
-        region: Option<String>,
-
-        /// Maximum depth (default: 10)
-        #[arg(long, default_value = "10")]
-        depth: u32,
-
-        /// Filter by roles (comma-separated: button,input,menu)
-        #[arg(long)]
-        roles: Option<String>,
-    },
-
-    /// Query elements using enhanced LLM-friendly syntax
-    ///
-    /// Examples:
-    ///   @button "Save"        - Button with name "Save"
-    ///   @input:enabled        - All enabled input fields
-    ///   #btnSave              - Element with automation ID
-    ///   @tab:nth(2)           - Second tab
-    Query {
-        /// Window query
-        window: String,
-
-        /// Element selector
-        selector: String,
-
-        /// Return all matches (default: first only)
-        #[arg(long)]
-        all: bool,
-
-        /// Output format: full, compact, refs
-        #[arg(long, default_value = "compact")]
-        format: String,
-    },
-
-    /// Click an element
-    ///
-    /// Examples:
-    ///   click notepad "@button 'Save'"
-    ///   click altium "Button[name='Compile']"
-    ///   click :1 --coords 100,200
-    Click {
-        /// Window query
-        window: String,
-
-        /// Element selector (or use --coords)
-        selector: Option<String>,
-
-        /// Click type: left (default), right, double
-        #[arg(long, short = 'k', default_value = "left")]
-        kind: String,
-
-        /// Click at coordinates: x,y (instead of selector)
-        #[arg(long, short = 'c')]
-        coords: Option<String>,
-    },
-
-    /// Type text into an element
-    ///
-    /// Examples:
-    ///   type notepad "#editor" --value "Hello World"
-    ///   type altium "@input 'Name'" --value "Component1"
-    Type {
-        /// Window query
-        window: String,
-
-        /// Element selector (to focus before typing)
-        selector: String,
-
-        /// Text to type
-        #[arg(long)]
-        value: String,
-    },
-
-    /// Send key combination
-    ///
-    /// Examples:
-    ///   keys notepad "ctrl+s"
-    ///   keys :1 "alt+f4"
-    Keys {
-        /// Window query
-        window: String,
-
-        /// Key combination (e.g., "ctrl+c", "alt+f4", "enter")
-        keys: String,
-    },
-
-    /// Scroll up or down
-    ///
-    /// Examples:
-    ///   scroll notepad up
-    ///   scroll :1 down --amount 5
-    Scroll {
-        /// Window query
-        window: String,
-
-        /// Direction: up or down
-        direction: String,
-
-        /// Number of scroll notches (default: 3)
-        #[arg(long, short = 'n', default_value = "3")]
-        amount: i32,
-    },
-
-    /// Dump the UIA element tree for a window
-    DumpTree {
-        /// Window query
-        window: String,
-
-        /// Maximum depth
-        #[arg(long, default_value = "5")]
-        depth: u32,
-
-        /// Output as JSON (default is compact text)
-        #[arg(long)]
-        json: bool,
-    },
-
-    /// Find UI elements by CSS-style selector
-    FindElement {
-        /// Window query
-        window: String,
-
-        /// CSS-style selector (e.g., "Button#save", "[name~='*OK*']")
-        selector: String,
-
-        /// Find all matches (default: first only)
-        #[arg(long)]
-        all: bool,
-    },
-
-    /// Invoke a UIA pattern operation on an element
-    Invoke {
-        /// Window query
-        window: String,
-
-        /// CSS-style selector to find target element
-        selector: String,
-
-        /// Pattern operation (invoke, get-value, set-value, toggle, select, expand, collapse)
-        #[arg(long)]
-        pattern: String,
-
-        /// Value for set operations
-        #[arg(long)]
-        value: Option<String>,
-    },
-
-    /// Perform an action on an element (combined query + invoke)
-    ///
-    /// Combines finding and acting on an element in one call.
-    Do {
-        /// Window query
-        window: String,
-
-        /// Action: click, type, toggle, expand, collapse, select
-        action: String,
-
-        /// Target element query (e.g., @button "Save", #inputField)
-        target: String,
-
-        /// Value for type/set operations
-        #[arg(long)]
-        value: Option<String>,
-    },
+#[derive(Subcommand, Debug)]
+enum PackCommands {
+    Show { pack: String },
+    Validate { window: String, pack: String, #[arg(long, default_value_t=300)] max_nodes: usize },
+    Explain { window: String, pack: String, target: String },
 }
 
 fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
-
+    let cli=Cli::parse();
     match cli.command {
-        Commands::Windows {
-            exe,
-            title,
-            json,
-            suggest,
-        } => {
-            cmd_windows(exe, title, json, suggest)?;
+        Commands::Windows{exe,title,json,suggest}=>cmd_windows(exe,title,json,suggest)?,
+        Commands::Observe{window,pack,max_nodes,max_items,max_text,depth}=>{
+            let hwnd=resolve_target(window.as_deref(),cli.target.as_deref())?;
+            let mut session=build_session(&hwnd,pack.as_deref(),depth)?;
+            let projected=session.observe(ObservationBudget{max_nodes,max_text_chars:max_text,max_collection_items:max_items}).map_err(anyhow::Error::msg)?;
+            println!("{}",serde_json::to_string_pretty(&projected)?);
         }
-
-        Commands::Summary {
-            window,
-            format,
-            bounds,
-            paths,
-            region,
-            depth,
-            roles,
-        } => {
-            let hwnd = resolve_target(window.as_deref(), None, cli.target.as_deref())?;
-            let focus_region = parse_region(&region);
-            let roles_vec = roles.map(|r| r.split(',').map(|s| s.trim().to_string()).collect());
-
-            let result = ops::get_summary(
-                &hwnd,
-                &format,
-                bounds,
-                paths,
-                focus_region,
-                depth,
-                roles_vec,
-            )?;
-            println!("{}", result);
+        Commands::Inspect{window,selector,pack,depth}=>{
+            let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;
+            let mut session=build_session(&hwnd,pack.as_deref(),depth)?;
+            if session.pack().is_some(){let _=session.observe(ObservationBudget::default()).map_err(anyhow::Error::msg)?;}
+            let refs=session.query(&selector).map_err(anyhow::Error::msg)?;
+            let mut out=Vec::new();
+            for r in refs { let node=session.graph().resolve_ref(&r).map_err(anyhow::Error::msg)?; if let Some(e)=session.graph().get(node){out.push(serde_json::json!({"ref":r,"element":e}));} }
+            println!("{}",serde_json::to_string_pretty(&out)?);
         }
-
-        Commands::Query {
-            window,
-            selector,
-            all,
-            format: _,
-        } => {
-            let hwnd = resolve_target_with_element(&window, &selector, cli.target.as_deref())?;
-            let result = ops::query_elements(&hwnd, &selector, all)?;
-            println!("{}", serde_json::to_string_pretty(&result)?);
+        Commands::Query{window,selector,pack,explain,depth}=>{
+            let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;
+            let mut session=build_session(&hwnd,pack.as_deref(),depth)?;
+            if session.pack().is_some(){let _=session.observe(ObservationBudget::default()).map_err(anyhow::Error::msg)?;}
+            if explain { println!("{}",serde_json::to_string_pretty(&session.explain_query(&selector).map_err(anyhow::Error::msg)?)?); }
+            else { println!("{}",serde_json::to_string_pretty(&session.query(&selector).map_err(anyhow::Error::msg)?)?); }
         }
-
-        Commands::Click {
-            window,
-            selector,
-            kind,
-            coords,
-        } => {
-            let coords_parsed = parse_coords(&coords);
-
-            // If coordinates specified, just use window resolution
-            // If selector specified, use element-aware resolution
-            let hwnd = if coords_parsed.is_some() || selector.is_none() {
-                resolve_target(Some(&window), None, cli.target.as_deref())?
-            } else {
-                resolve_target_with_element(
-                    &window,
-                    selector.as_deref().unwrap_or(""),
-                    cli.target.as_deref(),
-                )?
-            };
-
-            ops::click(&hwnd, &kind, coords_parsed, selector.as_deref())?;
-            println!("Click successful");
+        Commands::Action{window,target,action,value,pack,input_fallback,depth}=>{
+            let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;
+            let mut session=build_session(&hwnd,pack.as_deref(),depth)?;
+            if session.pack().is_some(){let _=session.observe(ObservationBudget::default()).map_err(anyhow::Error::msg)?;}
+            let value=value.map(ActionValue::Text).unwrap_or(ActionValue::None);
+            let result=if let Some(semantic)=SemanticAction::parse(&action){session.perform(&target,semantic,value,input_fallback)}else{session.perform_pack_action(&action,value)}.map_err(anyhow::Error::msg)?;
+            println!("{}",serde_json::to_string_pretty(&result)?);
         }
-
-        Commands::Type {
-            window,
-            selector,
-            value,
-        } => {
-            let hwnd = resolve_target_with_element(&window, &selector, cli.target.as_deref())?;
-            ops::type_text(&hwnd, &value, Some(&selector))?;
-            println!("Text typed successfully");
+        Commands::Snapshot{window,output,depth}=>{
+            let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;let session=build_session(&hwnd,None,depth)?;let json=serde_json::to_string_pretty(&session.graph().snapshot())?;
+            if let Some(path)=output{std::fs::write(&path,json)?;eprintln!("wrote {}",path.display());}else{println!("{}",json);}
         }
-
-        Commands::Keys { window, keys } => {
-            let hwnd = resolve_target(Some(&window), None, cli.target.as_deref())?;
-            ops::send_keys(&hwnd, &keys)?;
-            println!("Keys sent successfully");
+        Commands::Pack{command}=>match command {
+            PackCommands::Show{pack}=>{let pack=load_pack(&pack)?;println!("{}",serde_json::to_string_pretty(&pack)?);}
+            PackCommands::Validate{window,pack,max_nodes}=>{let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;let mut session=build_session(&hwnd,None,24)?;let pack=load_pack(&pack)?;let report=packs::validate_against_graph(session.graph_mut(),&pack,ObservationBudget{max_nodes,..Default::default()}).map_err(anyhow::Error::msg)?;println!("{}",serde_json::to_string_pretty(&report)?);}
+            PackCommands::Explain{window,pack,target}=>{let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;let mut session=build_session(&hwnd,Some(&pack),24)?;let _=session.observe(ObservationBudget::default()).map_err(anyhow::Error::msg)?;let node=resolve_semantic_target(&session,&target)?;let pack=session.pack().ok_or_else(||anyhow::anyhow!("pack missing"))?;println!("{}",serde_json::to_string_pretty(&packs::explain(session.graph(),pack,node).map_err(anyhow::Error::msg)?)?);}
+        },
+        Commands::Serve{window,pack,depth}=>{
+            let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;let mut session=build_session(&hwnd,pack.as_deref(),depth)?;
+            let stdin=std::io::stdin();let stdout=std::io::stdout();desktop_cli::session::protocol::run_jsonl_server(&mut session,stdin.lock(),stdout.lock()).map_err(anyhow::Error::msg)?;
         }
-
-        Commands::Scroll {
-            window,
-            direction,
-            amount,
-        } => {
-            let hwnd = resolve_target(Some(&window), None, cli.target.as_deref())?;
-            ops::scroll(&hwnd, &direction, amount)?;
-            println!("Scroll successful");
-        }
-
-        Commands::DumpTree {
-            window,
-            depth,
-            json,
-        } => {
-            let hwnd = resolve_target(Some(&window), None, cli.target.as_deref())?;
-            let result = ops::dump_tree(&hwnd, depth)?;
-            if json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("{}", format_tree_text(&result, 0));
-            }
-        }
-
-        Commands::FindElement {
-            window,
-            selector,
-            all,
-        } => {
-            let hwnd = resolve_target_with_element(&window, &selector, cli.target.as_deref())?;
-            let result = ops::find_elements(&hwnd, &selector, all)?;
-            println!("{}", serde_json::to_string_pretty(&result)?);
-        }
-
-        Commands::Invoke {
-            window,
-            selector,
-            pattern,
-            value,
-        } => {
-            let hwnd = resolve_target_with_element(&window, &selector, cli.target.as_deref())?;
-            let result = ops::invoke_pattern(&hwnd, &selector, &pattern, value.as_deref())?;
-            println!("{}", serde_json::to_string_pretty(&result)?);
-        }
-
-        Commands::Do {
-            window,
-            action,
-            target,
-            value,
-        } => {
-            let hwnd = resolve_target_with_element(&window, &target, cli.target.as_deref())?;
-
-            // Map action to pattern
-            let pattern = match action.to_lowercase().as_str() {
-                "click" => "invoke",
-                "type" | "input" | "set" => "set-value",
-                "toggle" | "check" | "uncheck" => "toggle",
-                "expand" | "open" => "expand",
-                "collapse" | "close" => "collapse",
-                "select" | "choose" => "select",
-                "get" | "read" => "get-value",
-                _ => &action,
-            };
-
-            let result = ops::invoke_pattern(&hwnd, &target, pattern, value.as_deref())?;
-            println!("{}", serde_json::to_string_pretty(&result)?);
-        }
+        Commands::Summary{window,format,bounds,paths,region,depth,roles}=>{let hwnd=resolve_target(window.as_deref(),cli.target.as_deref())?;let focus=parse_region(&region);let roles=roles.map(|r|r.split(',').map(|s|s.trim().to_string()).collect());println!("{}",ops::get_summary(&hwnd,&format,bounds,paths,focus,depth,roles)?);}
+        Commands::Click{window,selector,kind,coords}=>{let coords=parse_coords(&coords);let hwnd=if coords.is_some()||selector.is_none(){resolve_target(Some(&window),cli.target.as_deref())?}else{resolve_target_with_element(&window,selector.as_deref().unwrap_or(""),cli.target.as_deref())?};ops::click(&hwnd,&kind,coords,selector.as_deref())?;println!("Click successful");}
+        Commands::Type{window,selector,value}=>{let hwnd=resolve_target_with_element(&window,&selector,cli.target.as_deref())?;ops::type_text(&hwnd,&value,Some(&selector))?;println!("Text typed successfully");}
+        Commands::Keys{window,keys}=>{let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;ops::send_keys(&hwnd,&keys)?;println!("Keys sent successfully");}
+        Commands::Scroll{window,direction,amount}=>{let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;ops::scroll(&hwnd,&direction,amount)?;println!("Scroll successful");}
+        Commands::DumpTree{window,depth,json}=>{let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;let tree=ops::dump_tree(&hwnd,depth)?;if json{println!("{}",serde_json::to_string_pretty(&tree)?)}else{print!("{}",format_tree_text(&tree,0));}}
+        Commands::FindElement{window,selector,all}=>{let hwnd=resolve_target_with_element(&window,&selector,cli.target.as_deref())?;println!("{}",serde_json::to_string_pretty(&ops::find_elements(&hwnd,&selector,all)?)?);}
+        Commands::Invoke{window,selector,pattern,value}=>{let hwnd=resolve_target_with_element(&window,&selector,cli.target.as_deref())?;println!("{}",serde_json::to_string_pretty(&ops::invoke_pattern(&hwnd,&selector,&pattern,value.as_deref())?)?);}
+        Commands::Do{window,action,target,value}=>{let hwnd=resolve_target_with_element(&window,&target,cli.target.as_deref())?;let pattern=match action.to_ascii_lowercase().as_str(){"click"=>"invoke","type"|"input"|"set"=>"set-value","toggle"|"check"|"uncheck"=>"toggle","expand"|"open"=>"expand","collapse"|"close"=>"collapse","select"|"choose"=>"select","get"|"read"=>"get-value",_=>action.as_str()};println!("{}",serde_json::to_string_pretty(&ops::invoke_pattern(&hwnd,&target,pattern,value.as_deref())?)?);}
     }
-
     Ok(())
 }
 
-// ============================================================================
-// Command Implementations
-// ============================================================================
-
-fn cmd_windows(
-    exe: Option<String>,
-    title: Option<String>,
-    json: bool,
-    suggest: Option<String>,
-) -> anyhow::Result<()> {
-    let windows = ops::list_windows(exe.as_deref(), title.as_deref())?;
-
-    if let Some(hwnd) = suggest {
-        // Show suggestions for specific window
-        match format_suggestions(&hwnd, &windows) {
-            Some(output) => println!("{}", output),
-            None => eprintln!("Window with HWND {} not found", hwnd),
-        }
-    } else if json {
-        // JSON output for agents
-        let output = format_window_list_json(&windows);
-        println!("{}", serde_json::to_string_pretty(&output)?);
-    } else {
-        // Human-readable list
-        println!("{}", format_window_list(&windows));
-    }
-
-    Ok(())
+fn build_session(hwnd:&str,pack_arg:Option<&str>,depth:u32)->anyhow::Result<DesktopSession>{
+    let accessibility=Box::new(LegacyAccessibilityBackend::new(hwnd).with_depth(depth));let input=Box::new(LegacyInputBackend::new(hwnd));let mut session=DesktopSession::new(accessibility,Some(input));session.refresh().map_err(anyhow::Error::msg)?;
+    if let Some(pack)=pack_arg.map(load_pack).transpose()?.or_else(||auto_pack(hwnd).ok().flatten()){session.set_pack(Some(pack));}
+    Ok(session)
 }
 
-// ============================================================================
-// Target Resolution Helpers
-// ============================================================================
+fn load_pack(arg:&str)->anyhow::Result<ApplicationPack>{if arg.eq_ignore_ascii_case("altium"){packs::builtin_altium().map_err(|d|anyhow::anyhow!("invalid built-in Altium pack: {:?}",d))}else{ApplicationPack::load_dir(arg).map_err(|d|anyhow::anyhow!("invalid pack: {:?}",d))}}
 
-/// Resolve window target, optionally with element disambiguation
-fn resolve_target(
-    window_arg: Option<&str>,
-    _element_selector: Option<&str>,
-    flag_target: Option<&str>,
-) -> anyhow::Result<String> {
-    // Priority: window_arg > flag > env var
-    let query_str = window_arg
-        .or(flag_target)
-        .or_else(|| {
-            std::env::var("DESKTOP_WINDOW").ok().as_deref().map(|_| {
-                // This closure doesn't work well, handle separately
-                ""
-            })
-        })
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "No window specified. Use a window query or set DESKTOP_WINDOW env var.\n\
-                 Run 'desktop windows' to see available windows."
-            )
-        })?;
+fn auto_pack(hwnd:&str)->anyhow::Result<Option<ApplicationPack>>{let info=ops::get_window_by_hwnd(hwnd)?;let altium=packs::builtin_altium().map_err(|d|anyhow::anyhow!("invalid built-in pack: {:?}",d))?;let matches=altium.manifest.detect.get("windows").map(|d|d.titles.iter().any(|p|wildcard(p,&info.title))).unwrap_or(false);Ok(matches.then_some(altium))}
 
-    // Check env var if nothing else set
-    let query_str = if query_str.is_empty() {
-        std::env::var("DESKTOP_WINDOW").map_err(|_| anyhow::anyhow!("No window specified"))?
-    } else {
-        query_str.to_string()
-    };
+fn resolve_semantic_target(session:&DesktopSession,target:&str)->anyhow::Result<u64>{if let Some(alias)=target.strip_prefix('$'){return session.graph().resolve_alias(alias).ok_or_else(||anyhow::anyhow!("alias '{}' does not resolve",target));}if let Some(node)=session.graph().resolve_opaque(target){return Ok(node);}let selector=desktop_cli::semantic::Selector::parse(target).map_err(anyhow::Error::msg)?;let found=session.graph().query(&selector);if found.len()==1{Ok(found[0])}else{Err(anyhow::anyhow!("target resolved to {} elements",found.len()))}}
 
-    let query = WindowQuery::parse(&query_str)
-        .map_err(|e| anyhow::anyhow!("Invalid window query: {}", e))?;
+fn cmd_windows(exe:Option<String>,title:Option<String>,json:bool,suggest:Option<String>)->anyhow::Result<()>{let windows=ops::list_windows(exe.as_deref(),title.as_deref())?;if let Some(hwnd)=suggest{match format_suggestions(&hwnd,&windows){Some(v)=>println!("{}",v),None=>eprintln!("Window {} not found",hwnd)}}else if json{println!("{}",serde_json::to_string_pretty(&format_window_list_json(&windows))?)}else{println!("{}",format_window_list(&windows))}Ok(())}
 
-    let windows = ops::list_windows(None, None)?;
+fn resolve_target(window:Option<&str>,flag:Option<&str>)->anyhow::Result<String>{let owned_env=std::env::var("DESKTOP_WINDOW").ok();let query_str=window.or(flag).or(owned_env.as_deref()).ok_or_else(||anyhow::anyhow!("No window specified. Run 'desktop windows' to discover targets."))?;let query=WindowQuery::parse(query_str).map_err(|e|anyhow::anyhow!("Invalid window query: {}",e))?;let windows=ops::list_windows(None,None)?;resolve_window(&query,&windows).map(|w|w.hwnd.clone()).map_err(|e|anyhow::anyhow!("{}",e))}
+fn resolve_target_with_element(window:&str,selector:&str,flag:Option<&str>)->anyhow::Result<String>{let query=WindowQuery::parse(flag.unwrap_or(window)).map_err(|e|anyhow::anyhow!("Invalid window query: {}",e))?;let windows=ops::list_windows(None,None)?;resolve_with_element(&query,selector,&windows,|hwnd,s|ops::element_exists(hwnd,s).map_err(|e|e.to_string())).map(|w|w.hwnd.clone()).map_err(|e|anyhow::anyhow!("{}",e))}
+fn parse_region(region:&Option<String>)->Option<[i32;4]>{region.as_ref().and_then(|r|{let p=r.split(',').filter_map(|s|s.trim().parse().ok()).collect::<Vec<i32>>();(p.len()==4).then(||[p[0],p[1],p[2],p[3]])})}
+fn parse_coords(coords:&Option<String>)->Option<(i32,i32)>{coords.as_ref().and_then(|r|{let p=r.split(',').filter_map(|s|s.trim().parse().ok()).collect::<Vec<i32>>();(p.len()==2).then(||(p[0],p[1]))})}
 
-    match resolve_window(&query, &windows) {
-        Ok(window) => Ok(window.hwnd.clone()),
-        Err(targeting::ResolutionError::AmbiguousWindow { query, windows }) => {
-            Err(format_ambiguous_error(&query, &windows))
-        }
-        Err(e) => Err(anyhow::anyhow!("{}", e)),
-    }
-}
-
-/// Resolve with element-aware disambiguation
-fn resolve_target_with_element(
-    window_arg: &str,
-    element_selector: &str,
-    flag_target: Option<&str>,
-) -> anyhow::Result<String> {
-    let query_str = flag_target.unwrap_or(window_arg);
-
-    let query = WindowQuery::parse(query_str)
-        .map_err(|e| anyhow::anyhow!("Invalid window query: {}", e))?;
-
-    let windows = ops::list_windows(None, None)?;
-
-    // Use element-aware resolution
-    match resolve_with_element(&query, element_selector, &windows, |hwnd, selector| {
-        ops::element_exists(hwnd, selector).map_err(|e| e.to_string())
-    }) {
-        Ok(window) => Ok(window.hwnd.clone()),
-        Err(targeting::ResolutionError::AmbiguousWindow { query, windows }) => {
-            Err(format_ambiguous_error(&query, &windows))
-        }
-        Err(targeting::ResolutionError::AmbiguousElement { selector, windows }) => {
-            let mut msg = format!("Found '{}' in {} windows:\n", selector, windows.len());
-            for (i, w) in windows.iter().enumerate() {
-                msg.push_str(&format!(
-                    "  [{}] {} - {} (hwnd:{})\n",
-                    i + 1,
-                    extract_exe_name(&w.executable),
-                    w.title,
-                    w.hwnd
-                ));
-            }
-            msg.push_str("Tip: Use ':1' or refine with 'title:...'");
-            Err(anyhow::anyhow!("{}", msg))
-        }
-        Err(e) => Err(anyhow::anyhow!("{}", e)),
-    }
-}
-
-fn format_ambiguous_error(query: &str, windows: &[automation::types::WindowInfo]) -> anyhow::Error {
-    let mut msg = format!("Found {} windows matching '{}':\n", windows.len(), query);
-    for (i, w) in windows.iter().enumerate() {
-        msg.push_str(&format!(
-            "  [:{}] {} - {} (hwnd:{}, pid:{})\n",
-            i + 1,
-            extract_exe_name(&w.executable),
-            w.title,
-            w.hwnd,
-            w.pid
-        ));
-    }
-    msg.push_str("Tip: Use ':1', ':2', etc. or refine with 'title:...'");
-    anyhow::anyhow!("{}", msg)
-}
-
-fn extract_exe_name(exe_path: &str) -> String {
-    exe_path
-        .rsplit(['\\', '/'])
-        .next()
-        .unwrap_or(exe_path)
-        .trim_end_matches(".exe")
-        .trim_end_matches(".EXE")
-        .to_lowercase()
-}
-
-// ============================================================================
-// Parsing Helpers
-// ============================================================================
-
-fn parse_region(region: &Option<String>) -> Option<[i32; 4]> {
-    region.as_ref().and_then(|r| {
-        let parts: Vec<i32> = r.split(',').filter_map(|s| s.trim().parse().ok()).collect();
-        if parts.len() == 4 {
-            Some([parts[0], parts[1], parts[2], parts[3]])
-        } else {
-            None
-        }
-    })
-}
-
-fn parse_coords(coords: &Option<String>) -> Option<(i32, i32)> {
-    coords.as_ref().and_then(|c| {
-        let parts: Vec<i32> = c.split(',').filter_map(|s| s.trim().parse().ok()).collect();
-        if parts.len() == 2 {
-            Some((parts[0], parts[1]))
-        } else {
-            None
-        }
-    })
-}
-
-/// Format UIA tree as compact LLM-friendly text
-fn format_tree_text(elem: &rpc::types::UiaElement, indent: usize) -> String {
-    let mut output = String::new();
-    let prefix = "  ".repeat(indent);
-
-    // Build a compact one-line summary for this element
-    // Format: [Type] "Name" #id @class [patterns] (bounds)
-    let mut line = format!("{}{}", prefix, elem.control_type);
-
-    // Add name if present
-    if !elem.name.is_empty() {
-        line.push_str(&format!(" \"{}\"", elem.name));
-    }
-
-    // Add automation_id if present and different from name
-    if !elem.automation_id.is_empty() && elem.automation_id != elem.name {
-        line.push_str(&format!(" #{}", elem.automation_id));
-    }
-
-    // Add value if present
-    if let Some(ref v) = elem.value {
-        if !v.is_empty() && v != &elem.name {
-            // Truncate long values
-            let display_val = if v.len() > 30 {
-                format!("{}...", &v[..27])
-            } else {
-                v.clone()
-            };
-            line.push_str(&format!(" ={}", display_val));
-        }
-    }
-
-    // Add patterns if any actionable ones
-    let actionable: Vec<&str> = elem
-        .patterns
-        .iter()
-        .map(|s| s.as_str())
-        .filter(|p| !["Transform", "Text", "ItemContainer", "VirtualizedItem"].contains(p))
-        .collect();
-    if !actionable.is_empty() {
-        line.push_str(&format!(" [{}]", actionable.join(",")));
-    }
-
-    // Add offscreen/disabled markers
-    if elem.is_offscreen {
-        line.push_str(" (offscreen)");
-    }
-    if !elem.is_enabled {
-        line.push_str(" (disabled)");
-    }
-
-    output.push_str(&line);
-    output.push('\n');
-
-    // Recurse into children
-    for child in &elem.children {
-        output.push_str(&format_tree_text(child, indent + 1));
-    }
-
-    output
-}
+fn format_tree_text(elem:&rpc::types::UiaElement,indent:usize)->String{let mut out=String::new();let prefix="  ".repeat(indent);let mut line=format!("{}{}",prefix,elem.control_type);if !elem.name.is_empty(){line.push_str(&format!(" \"{}\"",elem.name));}if !elem.automation_id.is_empty()&&elem.automation_id!=elem.name{line.push_str(&format!(" #{}",elem.automation_id));}if let Some(v)=&elem.value{if !v.is_empty()&&v!=&elem.name{let value=if v.len()>80{format!("{}…",v.chars().take(79).collect::<String>())}else{v.clone()};line.push_str(&format!(" ={}",value));}}if !elem.patterns.is_empty(){line.push_str(&format!(" [{}]",elem.patterns.join(",")));}if elem.is_offscreen{line.push_str(" (offscreen)");}if !elem.is_enabled{line.push_str(" (disabled)");}out.push_str(&line);out.push('\n');for child in &elem.children{out.push_str(&format_tree_text(child,indent+1));}out}
+fn wildcard(pattern:&str,value:&str)->bool{let p=pattern.to_ascii_lowercase();let v=value.to_ascii_lowercase();if p=="*"{return true;}if let Some(mid)=p.strip_prefix('*').and_then(|s|s.strip_suffix('*')){return v.contains(mid);}if let Some(s)=p.strip_prefix('*'){return v.ends_with(s);}if let Some(s)=p.strip_suffix('*'){return v.starts_with(s);}p==v}
