@@ -1,11 +1,11 @@
 use clap::{Parser, Subcommand};
 use desktop_cli::packs::{self, ApplicationPack};
 use desktop_cli::providers::{LegacyAccessibilityBackend, LegacyInputBackend};
-use desktop_cli::semantic::{ActionValue, ObservationBudget, SemanticAction};
+use desktop_cli::semantic::{ActionValue, GraphSnapshot, ObservationBudget, SemanticAction};
 use desktop_cli::session::DesktopSession;
 use desktop_cli::{ops, rpc, targeting};
 use targeting::{format_suggestions, format_window_list, format_window_list_json, resolve_window, resolve_with_element, WindowQuery};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Parser, Debug)]
 #[command(name="desktop", author, version, about="Semantic cross-platform desktop control for agents")]
@@ -19,13 +19,31 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Commands {
     Windows { #[arg(long)] exe: Option<String>, #[arg(long)] title: Option<String>, #[arg(long)] json: bool, #[arg(long)] suggest: Option<String> },
-    Observe { window: Option<String>, #[arg(long)] pack: Option<String>, #[arg(long, default_value_t=300)] max_nodes: usize, #[arg(long, default_value_t=40)] max_items: usize, #[arg(long, default_value_t=24_000)] max_text: usize, #[arg(long, default_value_t=16)] depth: u32 },
-    Inspect { window: String, selector: String, #[arg(long)] pack: Option<String>, #[arg(long, default_value_t=16)] depth: u32 },
-    Query { window: String, selector: String, #[arg(long)] pack: Option<String>, #[arg(long)] explain: bool, #[arg(long, default_value_t=16)] depth: u32 },
-    Action { window: String, target: String, action: String, #[arg(long)] value: Option<String>, #[arg(long)] pack: Option<String>, #[arg(long)] input_fallback: bool, #[arg(long, default_value_t=16)] depth: u32 },
-    Snapshot { window: String, #[arg(long)] output: Option<PathBuf>, #[arg(long, default_value_t=24)] depth: u32 },
+    Observe {
+        window: Option<String>, #[arg(long)] pack: Option<String>,
+        #[arg(long, default_value_t=300)] max_nodes: usize,
+        #[arg(long, default_value_t=40)] max_items: usize,
+        #[arg(long, default_value_t=24_000)] max_text: usize,
+        #[arg(long, default_value_t=20)] max_depth: usize,
+        #[arg(long, default_value_t=16_384)] max_native_bytes: usize,
+        #[arg(long, default_value_t=2_000)] max_millis: u64,
+        #[arg(long, default_value_t=24)] depth: u32,
+    },
+    Inspect { window: String, selector: String, #[arg(long)] pack: Option<String>, #[arg(long, default_value_t=24)] depth: u32 },
+    Query {
+        window: String, selector: String, #[arg(long)] pack: Option<String>, #[arg(long)] explain: bool,
+        #[arg(long)] all: bool, #[arg(long, default_value="compact")] format: String,
+        #[arg(long)] limit: Option<usize>, #[arg(long, default_value_t=24)] depth: u32,
+    },
+    Action {
+        window: String, target: String, action: String, #[arg(long)] value: Option<String>, #[arg(long)] pack: Option<String>,
+        #[arg(long)] input_fallback: bool, #[arg(long)] keyboard_fallback: bool, #[arg(long, default_value_t=24)] depth: u32,
+    },
+    Snapshot { window: String, #[arg(long)] output: Option<PathBuf>, #[arg(long, default_value_t=32)] depth: u32 },
     Pack { #[command(subcommand)] command: PackCommands },
-    Serve { window: String, #[arg(long)] pack: Option<String>, #[arg(long, default_value_t=24)] depth: u32 },
+    Serve { window: String, #[arg(long)] pack: Option<String>, #[arg(long, default_value_t=32)] depth: u32 },
+
+    // Compatibility commands retained for one compatibility release.
     Summary { window: Option<String>, #[arg(long, default_value="json")] format: String, #[arg(long)] bounds: bool, #[arg(long)] paths: bool, #[arg(long)] region: Option<String>, #[arg(long, default_value_t=10)] depth: u32, #[arg(long)] roles: Option<String> },
     Click { window: String, selector: Option<String>, #[arg(long, short='k', default_value="left")] kind: String, #[arg(long, short='c')] coords: Option<String> },
     Type { window: String, selector: String, #[arg(long)] value: String },
@@ -39,19 +57,23 @@ enum Commands {
 
 #[derive(Subcommand, Debug)]
 enum PackCommands {
+    List,
+    Detect { window: String },
     Show { pack: String },
     Validate { window: String, pack: String, #[arg(long, default_value_t=300)] max_nodes: usize },
-    Explain { window: String, pack: String, target: String },
+    Test { pack: String, snapshot: PathBuf, #[arg(long, default_value_t=300)] max_nodes: usize },
+    Explain { pack: String, target: String, #[arg(long)] window: Option<String>, #[arg(long)] snapshot: Option<PathBuf> },
 }
 
 fn main() -> anyhow::Result<()> {
     let cli=Cli::parse();
     match cli.command {
         Commands::Windows{exe,title,json,suggest}=>cmd_windows(exe,title,json,suggest)?,
-        Commands::Observe{window,pack,max_nodes,max_items,max_text,depth}=>{
+        Commands::Observe{window,pack,max_nodes,max_items,max_text,max_depth,max_native_bytes,max_millis,depth}=>{
             let hwnd=resolve_target(window.as_deref(),cli.target.as_deref())?;
             let mut session=build_session(&hwnd,pack.as_deref(),depth)?;
-            let projected=session.observe(ObservationBudget{max_nodes,max_text_chars:max_text,max_collection_items:max_items}).map_err(anyhow::Error::msg)?;
+            let budget=ObservationBudget{max_nodes,max_text_chars:max_text,max_collection_items:max_items,max_depth,max_native_property_bytes:max_native_bytes,max_millis};
+            let projected=session.observe(budget).map_err(anyhow::Error::msg)?;
             println!("{}",serde_json::to_string_pretty(&projected)?);
         }
         Commands::Inspect{window,selector,pack,depth}=>{
@@ -59,21 +81,31 @@ fn main() -> anyhow::Result<()> {
             let mut session=build_session(&hwnd,pack.as_deref(),depth)?;
             if session.pack().is_some(){let _=session.observe(ObservationBudget::default()).map_err(anyhow::Error::msg)?;}
             let refs=session.query(&selector).map_err(anyhow::Error::msg)?;
-            let mut out=Vec::new();
-            for r in refs { let node=session.graph().resolve_ref(&r).map_err(anyhow::Error::msg)?; if let Some(e)=session.graph().get(node){out.push(serde_json::json!({"ref":r,"element":e}));} }
-            println!("{}",serde_json::to_string_pretty(&out)?);
+            let out=refs.into_iter().filter_map(|r|session.graph().resolve_ref(&r).ok().and_then(|node|session.graph().get(node).map(|e|serde_json::json!({"ref":r,"element":e})))).collect::<Vec<_>>();
+            println!("{}",serde_json::to_string_pretty(&serde_json::json!({"schema_version":2,"matches":out}))?);
         }
-        Commands::Query{window,selector,pack,explain,depth}=>{
+        Commands::Query{window,selector,pack,explain,all,format,limit,depth}=>{
             let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;
             let mut session=build_session(&hwnd,pack.as_deref(),depth)?;
             if session.pack().is_some(){let _=session.observe(ObservationBudget::default()).map_err(anyhow::Error::msg)?;}
             if explain { println!("{}",serde_json::to_string_pretty(&session.explain_query(&selector).map_err(anyhow::Error::msg)?)?); }
-            else { println!("{}",serde_json::to_string_pretty(&session.query(&selector).map_err(anyhow::Error::msg)?)?); }
+            else {
+                let mut refs=session.query(&selector).map_err(anyhow::Error::msg)?;
+                if !all && refs.len()>1 { refs.truncate(1); }
+                if let Some(limit)=limit { refs.truncate(limit); }
+                let value=match format.as_str(){
+                    "refs"=>serde_json::to_value(&refs)?,
+                    "full"=>serde_json::to_value(refs.iter().filter_map(|r|session.graph().resolve_ref(r).ok()).filter_map(|n|session.graph().get(n)).collect::<Vec<_>>())?,
+                    _=>serde_json::Value::Array(refs.iter().filter_map(|r|session.graph().resolve_ref(r).ok().and_then(|n|session.graph().get(n).map(|e|serde_json::json!({"ref":r,"role":e.role,"name":e.name,"value":e.value.as_ref().map(|v|v.display_text())})))).collect()),
+                };
+                println!("{}",serde_json::to_string_pretty(&serde_json::json!({"schema_version":2,"count":refs.len(),"matches":value}))?);
+            }
         }
-        Commands::Action{window,target,action,value,pack,input_fallback,depth}=>{
+        Commands::Action{window,target,action,value,pack,input_fallback,keyboard_fallback,depth}=>{
             let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;
             let mut session=build_session(&hwnd,pack.as_deref(),depth)?;
-            if session.pack().is_some(){let _=session.observe(ObservationBudget::default()).map_err(anyhow::Error::msg)?;}
+            session.action_policy_mut().allow_pointer_fallback=input_fallback;
+            session.action_policy_mut().allow_keyboard_fallback=keyboard_fallback;
             let value=value.map(ActionValue::Text).unwrap_or(ActionValue::None);
             let result=if let Some(semantic)=SemanticAction::parse(&action){session.perform(&target,semantic,value,input_fallback)}else{session.perform_pack_action(&action,value)}.map_err(anyhow::Error::msg)?;
             println!("{}",serde_json::to_string_pretty(&result)?);
@@ -83,23 +115,30 @@ fn main() -> anyhow::Result<()> {
             if let Some(path)=output{std::fs::write(&path,json)?;eprintln!("wrote {}",path.display());}else{println!("{}",json);}
         }
         Commands::Pack{command}=>match command {
+            PackCommands::List=>println!("{}",serde_json::to_string_pretty(&serde_json::json!({"schema_version":2,"packs":[{"id":"altium","builtin":true}]}))?),
+            PackCommands::Detect{window}=>{let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;let detected=detect_pack_id(&hwnd)?;println!("{}",serde_json::to_string_pretty(&serde_json::json!({"schema_version":2,"pack":detected}))?);}
             PackCommands::Show{pack}=>{let pack=load_pack(&pack)?;println!("{}",serde_json::to_string_pretty(&pack)?);}
-            PackCommands::Validate{window,pack,max_nodes}=>{let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;let mut session=build_session(&hwnd,None,24)?;let pack=load_pack(&pack)?;let report=packs::validate_against_graph(session.graph_mut(),&pack,ObservationBudget{max_nodes,..Default::default()}).map_err(anyhow::Error::msg)?;println!("{}",serde_json::to_string_pretty(&report)?);}
-            PackCommands::Explain{window,pack,target}=>{let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;let mut session=build_session(&hwnd,Some(&pack),24)?;let _=session.observe(ObservationBudget::default()).map_err(anyhow::Error::msg)?;let node=resolve_semantic_target(&session,&target)?;let pack=session.pack().ok_or_else(||anyhow::anyhow!("pack missing"))?;println!("{}",serde_json::to_string_pretty(&packs::explain(session.graph(),pack,node).map_err(anyhow::Error::msg)?)?);}
+            PackCommands::Validate{window,pack,max_nodes}=>{let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;let mut session=build_session(&hwnd,None,32)?;let pack=load_pack(&pack)?;let report=packs::validate_against_graph(session.graph_mut(),&pack,ObservationBudget{max_nodes,..Default::default()}).map_err(anyhow::Error::msg)?;println!("{}",serde_json::to_string_pretty(&report)?);}
+            PackCommands::Test{pack,snapshot,max_nodes}=>{let mut graph=load_snapshot(&snapshot)?;let pack=load_pack(&pack)?;let report=packs::validate_against_graph(&mut graph,&pack,ObservationBudget{max_nodes,..Default::default()}).map_err(anyhow::Error::msg)?;println!("{}",serde_json::to_string_pretty(&report)?);}
+            PackCommands::Explain{pack,target,window,snapshot}=>{
+                let pack=load_pack(&pack)?;
+                if let Some(snapshot)=snapshot { let mut graph=load_snapshot(&snapshot)?;let _=packs::project(&mut graph,&pack,ObservationBudget::default()).map_err(anyhow::Error::msg)?;let node=resolve_graph_target(&graph,&target)?;println!("{}",serde_json::to_string_pretty(&packs::explain(&graph,&pack,node).map_err(anyhow::Error::msg)?)?); }
+                else { let window=window.ok_or_else(||anyhow::anyhow!("pack explain requires --window or --snapshot"))?;let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;let mut session=build_session(&hwnd,Some(&pack.manifest.id),32).or_else(|_|build_session_with_pack(&hwnd,pack.clone(),32))?;let _=session.observe(ObservationBudget::default()).map_err(anyhow::Error::msg)?;let node=resolve_graph_target(session.graph(),&target)?;println!("{}",serde_json::to_string_pretty(&packs::explain(session.graph(),&pack,node).map_err(anyhow::Error::msg)?)?); }
+            }
         },
         Commands::Serve{window,pack,depth}=>{
             let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;let mut session=build_session(&hwnd,pack.as_deref(),depth)?;
             let stdin=std::io::stdin();let stdout=std::io::stdout();desktop_cli::session::protocol::run_jsonl_server(&mut session,stdin.lock(),stdout.lock()).map_err(anyhow::Error::msg)?;
         }
-        Commands::Summary{window,format,bounds,paths,region,depth,roles}=>{let hwnd=resolve_target(window.as_deref(),cli.target.as_deref())?;let focus=parse_region(&region);let roles=roles.map(|r|r.split(',').map(|s|s.trim().to_string()).collect());println!("{}",ops::get_summary(&hwnd,&format,bounds,paths,focus,depth,roles)?);}
-        Commands::Click{window,selector,kind,coords}=>{let coords=parse_coords(&coords);let hwnd=if coords.is_some()||selector.is_none(){resolve_target(Some(&window),cli.target.as_deref())?}else{resolve_target_with_element(&window,selector.as_deref().unwrap_or(""),cli.target.as_deref())?};ops::click(&hwnd,&kind,coords,selector.as_deref())?;println!("Click successful");}
-        Commands::Type{window,selector,value}=>{let hwnd=resolve_target_with_element(&window,&selector,cli.target.as_deref())?;ops::type_text(&hwnd,&value,Some(&selector))?;println!("Text typed successfully");}
-        Commands::Keys{window,keys}=>{let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;ops::send_keys(&hwnd,&keys)?;println!("Keys sent successfully");}
-        Commands::Scroll{window,direction,amount}=>{let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;ops::scroll(&hwnd,&direction,amount)?;println!("Scroll successful");}
-        Commands::DumpTree{window,depth,json}=>{let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;let tree=ops::dump_tree(&hwnd,depth)?;if json{println!("{}",serde_json::to_string_pretty(&tree)?)}else{print!("{}",format_tree_text(&tree,0));}}
-        Commands::FindElement{window,selector,all}=>{let hwnd=resolve_target_with_element(&window,&selector,cli.target.as_deref())?;println!("{}",serde_json::to_string_pretty(&ops::find_elements(&hwnd,&selector,all)?)?);}
-        Commands::Invoke{window,selector,pattern,value}=>{let hwnd=resolve_target_with_element(&window,&selector,cli.target.as_deref())?;println!("{}",serde_json::to_string_pretty(&ops::invoke_pattern(&hwnd,&selector,&pattern,value.as_deref())?)?);}
-        Commands::Do{window,action,target,value}=>{let hwnd=resolve_target_with_element(&window,&target,cli.target.as_deref())?;let pattern=match action.to_ascii_lowercase().as_str(){"click"=>"invoke","type"|"input"|"set"=>"set-value","toggle"|"check"|"uncheck"=>"toggle","expand"|"open"=>"expand","collapse"|"close"=>"collapse","select"|"choose"=>"select","get"|"read"=>"get-value",_=>action.as_str()};println!("{}",serde_json::to_string_pretty(&ops::invoke_pattern(&hwnd,&target,pattern,value.as_deref())?)?);}
+        Commands::Summary{window,format,bounds,paths,region,depth,roles}=>{warn_legacy("summary","observe");let hwnd=resolve_target(window.as_deref(),cli.target.as_deref())?;let focus=parse_region(&region);let roles=roles.map(|r|r.split(',').map(|s|s.trim().to_string()).collect());println!("{}",ops::get_summary(&hwnd,&format,bounds,paths,focus,depth,roles)?);}
+        Commands::Click{window,selector,kind,coords}=>{warn_legacy("click","action");let coords=parse_coords(&coords);let hwnd=if coords.is_some()||selector.is_none(){resolve_target(Some(&window),cli.target.as_deref())?}else{resolve_target_with_element(&window,selector.as_deref().unwrap_or(""),cli.target.as_deref())?};ops::click(&hwnd,&kind,coords,selector.as_deref())?;println!("Click successful");}
+        Commands::Type{window,selector,value}=>{warn_legacy("type","action");let hwnd=resolve_target_with_element(&window,&selector,cli.target.as_deref())?;ops::type_text(&hwnd,&value,Some(&selector))?;println!("Text typed successfully");}
+        Commands::Keys{window,keys}=>{warn_legacy("keys","action with explicit fallback policy");let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;ops::send_keys(&hwnd,&keys)?;println!("Keys sent successfully");}
+        Commands::Scroll{window,direction,amount}=>{warn_legacy("scroll","action");let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;ops::scroll(&hwnd,&direction,amount)?;println!("Scroll successful");}
+        Commands::DumpTree{window,depth,json}=>{warn_legacy("dump-tree","snapshot");let hwnd=resolve_target(Some(&window),cli.target.as_deref())?;let tree=ops::dump_tree(&hwnd,depth)?;if json{println!("{}",serde_json::to_string_pretty(&tree)?)}else{print!("{}",format_tree_text(&tree,0));}}
+        Commands::FindElement{window,selector,all}=>{warn_legacy("find-element","query");let hwnd=resolve_target_with_element(&window,&selector,cli.target.as_deref())?;println!("{}",serde_json::to_string_pretty(&ops::find_elements(&hwnd,&selector,all)?)?);}
+        Commands::Invoke{window,selector,pattern,value}=>{warn_legacy("invoke","action");let hwnd=resolve_target_with_element(&window,&selector,cli.target.as_deref())?;println!("{}",serde_json::to_string_pretty(&ops::invoke_pattern(&hwnd,&selector,&pattern,value.as_deref())?)?);}
+        Commands::Do{window,action,target,value}=>{warn_legacy("do","action");let hwnd=resolve_target_with_element(&window,&target,cli.target.as_deref())?;let pattern=match action.to_ascii_lowercase().as_str(){"click"=>"invoke","type"|"input"|"set"=>"set-value","toggle"|"check"|"uncheck"=>"toggle","expand"|"open"=>"expand","collapse"|"close"=>"collapse","select"|"choose"=>"select","get"|"read"=>"get-value",_=>action.as_str()};println!("{}",serde_json::to_string_pretty(&ops::invoke_pattern(&hwnd,&target,pattern,value.as_deref())?)?);}
     }
     Ok(())
 }
@@ -109,19 +148,18 @@ fn build_session(hwnd:&str,pack_arg:Option<&str>,depth:u32)->anyhow::Result<Desk
     if let Some(pack)=pack_arg.map(load_pack).transpose()?.or_else(||auto_pack(hwnd).ok().flatten()){session.set_pack(Some(pack));}
     Ok(session)
 }
-
+fn build_session_with_pack(hwnd:&str,pack:ApplicationPack,depth:u32)->anyhow::Result<DesktopSession>{let mut session=build_session(hwnd,None,depth)?;session.set_pack(Some(pack));Ok(session)}
 fn load_pack(arg:&str)->anyhow::Result<ApplicationPack>{if arg.eq_ignore_ascii_case("altium"){packs::builtin_altium().map_err(|d|anyhow::anyhow!("invalid built-in Altium pack: {:?}",d))}else{ApplicationPack::load_dir(arg).map_err(|d|anyhow::anyhow!("invalid pack: {:?}",d))}}
-
-fn auto_pack(hwnd:&str)->anyhow::Result<Option<ApplicationPack>>{let info=ops::get_window_by_hwnd(hwnd)?;let altium=packs::builtin_altium().map_err(|d|anyhow::anyhow!("invalid built-in pack: {:?}",d))?;let matches=altium.manifest.detect.get("windows").map(|d|d.titles.iter().any(|p|wildcard(p,&info.title))).unwrap_or(false);Ok(matches.then_some(altium))}
-
-fn resolve_semantic_target(session:&DesktopSession,target:&str)->anyhow::Result<u64>{if let Some(alias)=target.strip_prefix('$'){return session.graph().resolve_alias(alias).ok_or_else(||anyhow::anyhow!("alias '{}' does not resolve",target));}if let Some(node)=session.graph().resolve_opaque(target){return Ok(node);}let selector=desktop_cli::semantic::Selector::parse(target).map_err(anyhow::Error::msg)?;let found=session.graph().query(&selector);if found.len()==1{Ok(found[0])}else{Err(anyhow::anyhow!("target resolved to {} elements",found.len()))}}
-
+fn auto_pack(hwnd:&str)->anyhow::Result<Option<ApplicationPack>>{Ok(match detect_pack_id(hwnd)?.as_deref(){Some("altium")=>Some(packs::builtin_altium().map_err(|d|anyhow::anyhow!("invalid built-in pack: {:?}",d))?),_=>None})}
+fn detect_pack_id(hwnd:&str)->anyhow::Result<Option<String>>{let info=ops::get_window_by_hwnd(hwnd)?;let altium=packs::builtin_altium().map_err(|d|anyhow::anyhow!("invalid built-in pack: {:?}",d))?;let section=platform_name();let matches=altium.manifest.detect.get(section).map(|d|d.titles.iter().any(|p|wildcard(p,&info.title))||d.executables.iter().any(|p|wildcard(p,&info.executable))).unwrap_or(false);Ok(matches.then(||"altium".into()))}
+fn platform_name()->&'static str{#[cfg(windows)]{return "windows";}#[cfg(target_os="linux")]{return "linux";}#[cfg(target_os="macos")]{return "macos";}#[allow(unreachable_code)]"unknown"}
+fn load_snapshot(path:&Path)->anyhow::Result<desktop_cli::semantic::AccessibilityGraph>{let data=std::fs::read_to_string(path)?;let snapshot:GraphSnapshot=serde_json::from_str(&data)?;Ok(desktop_cli::semantic::AccessibilityGraph::from_snapshot(snapshot))}
+fn resolve_graph_target(graph:&desktop_cli::semantic::AccessibilityGraph,target:&str)->anyhow::Result<u64>{if let Some(alias)=target.strip_prefix('$'){return graph.resolve_alias(alias).ok_or_else(||anyhow::anyhow!("alias '{}' does not resolve",target));}if let Some(node)=graph.resolve_opaque(target){return Ok(node);}let selector=desktop_cli::semantic::Selector::parse(target).map_err(anyhow::Error::msg)?;let found=graph.query(&selector);if found.len()==1{Ok(found[0])}else{Err(anyhow::anyhow!("target resolved to {} elements",found.len()))}}
 fn cmd_windows(exe:Option<String>,title:Option<String>,json:bool,suggest:Option<String>)->anyhow::Result<()>{let windows=ops::list_windows(exe.as_deref(),title.as_deref())?;if let Some(hwnd)=suggest{match format_suggestions(&hwnd,&windows){Some(v)=>println!("{}",v),None=>eprintln!("Window {} not found",hwnd)}}else if json{println!("{}",serde_json::to_string_pretty(&format_window_list_json(&windows))?)}else{println!("{}",format_window_list(&windows))}Ok(())}
-
 fn resolve_target(window:Option<&str>,flag:Option<&str>)->anyhow::Result<String>{let owned_env=std::env::var("DESKTOP_WINDOW").ok();let query_str=window.or(flag).or(owned_env.as_deref()).ok_or_else(||anyhow::anyhow!("No window specified. Run 'desktop windows' to discover targets."))?;let query=WindowQuery::parse(query_str).map_err(|e|anyhow::anyhow!("Invalid window query: {}",e))?;let windows=ops::list_windows(None,None)?;resolve_window(&query,&windows).map(|w|w.hwnd.clone()).map_err(|e|anyhow::anyhow!("{}",e))}
 fn resolve_target_with_element(window:&str,selector:&str,flag:Option<&str>)->anyhow::Result<String>{let query=WindowQuery::parse(flag.unwrap_or(window)).map_err(|e|anyhow::anyhow!("Invalid window query: {}",e))?;let windows=ops::list_windows(None,None)?;resolve_with_element(&query,selector,&windows,|hwnd,s|ops::element_exists(hwnd,s).map_err(|e|e.to_string())).map(|w|w.hwnd.clone()).map_err(|e|anyhow::anyhow!("{}",e))}
 fn parse_region(region:&Option<String>)->Option<[i32;4]>{region.as_ref().and_then(|r|{let p=r.split(',').filter_map(|s|s.trim().parse().ok()).collect::<Vec<i32>>();(p.len()==4).then(||[p[0],p[1],p[2],p[3]])})}
 fn parse_coords(coords:&Option<String>)->Option<(i32,i32)>{coords.as_ref().and_then(|r|{let p=r.split(',').filter_map(|s|s.trim().parse().ok()).collect::<Vec<i32>>();(p.len()==2).then(||(p[0],p[1]))})}
-
 fn format_tree_text(elem:&rpc::types::UiaElement,indent:usize)->String{let mut out=String::new();let prefix="  ".repeat(indent);let mut line=format!("{}{}",prefix,elem.control_type);if !elem.name.is_empty(){line.push_str(&format!(" \"{}\"",elem.name));}if !elem.automation_id.is_empty()&&elem.automation_id!=elem.name{line.push_str(&format!(" #{}",elem.automation_id));}if let Some(v)=&elem.value{if !v.is_empty()&&v!=&elem.name{let value=if v.len()>80{format!("{}…",v.chars().take(79).collect::<String>())}else{v.clone()};line.push_str(&format!(" ={}",value));}}if !elem.patterns.is_empty(){line.push_str(&format!(" [{}]",elem.patterns.join(",")));}if elem.is_offscreen{line.push_str(" (offscreen)");}if !elem.is_enabled{line.push_str(" (disabled)");}out.push_str(&line);out.push('\n');for child in &elem.children{out.push_str(&format_tree_text(child,indent+1));}out}
 fn wildcard(pattern:&str,value:&str)->bool{let p=pattern.to_ascii_lowercase();let v=value.to_ascii_lowercase();if p=="*"{return true;}if let Some(mid)=p.strip_prefix('*').and_then(|s|s.strip_suffix('*')){return v.contains(mid);}if let Some(s)=p.strip_prefix('*'){return v.ends_with(s);}if let Some(s)=p.strip_suffix('*'){return v.starts_with(s);}p==v}
+fn warn_legacy(command:&str,replacement:&str){eprintln!("warning: 'desktop {}' is a compatibility command; prefer '{}' for new agent integrations",command,replacement);}
