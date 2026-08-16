@@ -7,6 +7,8 @@ pub mod windows;
 pub mod windows_uia;
 #[cfg(target_os = "linux")]
 pub mod linux_atspi;
+#[cfg(target_os = "macos")]
+pub mod macos_ax;
 
 pub use legacy::*;
 pub use mock::*;
@@ -14,3 +16,5 @@ pub use mock::*;
 pub use windows_uia::*;
 #[cfg(target_os = "linux")]
 pub use linux_atspi::*;
+#[cfg(target_os = "macos")]
+pub use macos_ax::*;
