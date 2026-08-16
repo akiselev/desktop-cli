@@ -1,0 +1,140 @@
+/*
+ * Altium's native accessibility structure varies across releases and panels.
+ * This built-in pack deliberately uses semantic names/roles only. Stable native
+ * IDs and version-specific overrides should be added from captured fixtures,
+ * never guessed.
+ */
+@view workspace {
+    default-projection: prune;
+
+    @window { projection: flatten; }
+    @panel:not([name=""]) { projection: flatten; }
+    @group:not([name=""]) { projection: flatten; }
+
+    @dialog:modal {
+        projection: keep;
+        importance: critical;
+        max-items: 80;
+    }
+
+    @alert {
+        projection: keep;
+        importance: critical;
+    }
+
+    :focused {
+        projection: keep;
+        importance: critical;
+    }
+
+    @tree[name*="Projects"] {
+        projection: keep;
+        alias: projects;
+        importance: high;
+        max-items: 50;
+        expose: name state selection count;
+    }
+
+    @panel[name*="Properties"] {
+        projection: keep;
+        alias: properties;
+        importance: high;
+        max-items: 80;
+        expose: name value state actions;
+    }
+
+    @toolbar {
+        projection: collapse;
+        importance: normal;
+        expose: name actions count;
+    }
+
+    @menubar {
+        projection: collapse;
+        expose: name actions count;
+    }
+
+    @menu {
+        projection: collapse;
+        expose: name actions count;
+    }
+
+    @statusbar {
+        projection: keep;
+        importance: normal;
+        max-items: 30;
+        expose: name value status;
+    }
+
+    @document {
+        projection: keep;
+        importance: high;
+        max-items: 20;
+        expose: name state bounds actions;
+    }
+
+    @canvas {
+        projection: keep;
+        importance: high;
+        max-items: 20;
+        expose: name state bounds actions;
+    }
+}
+
+@view modal when @dialog:modal {
+    @use workspace;
+    priority: 1000;
+    default-projection: prune;
+
+    @dialog:modal {
+        projection: keep;
+        importance: critical;
+        max-items: 120;
+    }
+}
+
+@view pcb when :is(@tab:selected[name$=".PcbDoc"], @document[name$=".PcbDoc"]) {
+    @use workspace;
+    priority: 100;
+
+    @document[name$=".PcbDoc"] {
+        projection: keep;
+        alias: pcb;
+        importance: critical;
+    }
+
+    @canvas {
+        projection: keep;
+        alias: pcb;
+        importance: critical;
+    }
+}
+
+@view schematic when :is(@tab:selected[name$=".SchDoc"], @document[name$=".SchDoc"]) {
+    @use workspace;
+    priority: 100;
+
+    @document[name$=".SchDoc"] {
+        projection: keep;
+        alias: schematic;
+        importance: critical;
+    }
+
+    @canvas {
+        projection: keep;
+        alias: schematic;
+        importance: critical;
+    }
+}
+
+@target save {
+    match: #SaveButton;
+    match: @button[name="Save"];
+    match: @menuitem[name="Save"];
+}
+
+@action save {
+    target: $save;
+    perform: activate;
+    fallback-keys: "ctrl+s";
+}

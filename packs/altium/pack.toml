@@ -1,0 +1,10 @@
+schema = 1
+id = "altium"
+name = "Altium Designer"
+version = "0.1.0"
+
+[view]
+default = "workspace"
+
+[detect.windows]
+titles = ["*Altium*"]
